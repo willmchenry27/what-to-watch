@@ -197,12 +197,12 @@ async function enrichPick(pick) {
   }
 }
 
-async function fetchAllTmdbPicks() {
+async function fetchAllTmdbPicks(overrideDateWindow) {
   if (!TMDB_KEY) {
     throw new Error('Missing TMDB_API_KEY in .env')
   }
 
-  const dateWindow = getDateWindow()
+  const dateWindow = overrideDateWindow || getDateWindow()
   console.log(`\nTMDB Fetch: Week of ${dateWindow.gte} to ${dateWindow.lte}\n`)
 
   // Fetch movies and TV in parallel

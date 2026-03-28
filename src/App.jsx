@@ -1,0 +1,202 @@
+import { useState, useMemo } from 'react'
+import Header from './components/Header'
+import PickCard from './components/PickCard'
+import Footer from './components/Footer'
+import ErrorBoundary from './components/ErrorBoundary'
+import { SkeletonHero, SkeletonGrid } from './components/SkeletonCard'
+import { useGuide } from './hooks/useGuide'
+
+function searchFilter(picks, query) {
+  if (!query.trim()) return picks
+  const q = query.toLowerCase()
+  return picks.filter((p) =>
+    p.title.toLowerCase().includes(q) ||
+    p.genres.some((g) => g.toLowerCase().includes(q)) ||
+    p.cast.some((c) => c.toLowerCase().includes(q)) ||
+    (p.director && p.director.toLowerCase().includes(q)) ||
+    (p.platform && p.platform.toLowerCase().includes(q))
+  )
+}
+
+function App() {
+  const [activeTab, setActiveTab] = useState('movies')
+  const [searchQuery, setSearchQuery] = useState('')
+
+  const { guide, picks: allPicks, loading } = useGuide()
+
+  const freshPicks = useMemo(() => allPicks.filter((p) => p.cohort === 'fresh'), [allPicks])
+  const simmeredPicks = useMemo(() => allPicks.filter((p) => p.cohort === 'simmered'), [allPicks])
+
+  const isLastWeek = activeTab === 'last_week'
+  const filterType = activeTab === 'tv' ? 'tv' : 'movie'
+
+  // Fresh Drops — filtered by type tab + search
+  const filteredFresh = useMemo(() => {
+    const byType = freshPicks.filter((p) => p.type === filterType)
+    return searchFilter(byType, searchQuery)
+  }, [freshPicks, filterType, searchQuery])
+
+  // Simmered — search only (no type filter, show all on its own tab)
+  const filteredSimmered = useMemo(() => {
+    return searchFilter(simmeredPicks, searchQuery)
+  }, [simmeredPicks, searchQuery])
+
+  // Heroes
+  const heroFresh = filteredFresh[0]
+  const remainingFresh = filteredFresh.slice(1)
+
+  const heroSimmered = filteredSimmered.find((p) => p.combined_score != null)
+  const remainingSimmered = filteredSimmered.filter((p) => p !== heroSimmered)
+
+  const FIRST_ROW_COUNT = 4
+
+  function handleTabChange(tab) {
+    setActiveTab(tab)
+    setSearchQuery('')
+  }
+
+  return (
+    <div className="min-h-screen bg-dark-950 flex flex-col">
+      <Header
+        activeTab={activeTab}
+        onTabChange={handleTabChange}
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+      />
+
+      <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 py-6 sm:py-10">
+        <ErrorBoundary>
+
+          {loading ? (
+            <>
+              <section className="mb-14">
+                <SkeletonHero />
+                <div className="mt-10">
+                  <div className="h-7 w-36 rounded bg-white/10 animate-pulse mb-6" />
+                  <SkeletonGrid count={4} />
+                </div>
+              </section>
+            </>
+
+          ) : isLastWeek ? (
+            /* ═══ LAST WEEK'S TOP RATED TAB ═══ */
+            <>
+              <div className="flex items-center gap-3 mb-6 sm:mb-8">
+                <div className="h-px flex-1 bg-white/10" />
+                <span className="text-[10px] sm:text-xs uppercase tracking-widest text-cream-300/50">
+                  Scores have settled — ranked by IMDb + Rotten Tomatoes
+                </span>
+                <div className="h-px flex-1 bg-white/10" />
+              </div>
+
+              {filteredSimmered.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-20">
+                  <div className="w-16 h-16 rounded-full bg-white/5 border border-white/10 flex items-center justify-center mb-4">
+                    <svg className="w-8 h-8 text-cream-300/20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <p className="text-cream-300/50 text-sm">No scored picks yet.</p>
+                  <p className="text-cream-300/30 text-xs mt-1">Scores appear after reviews settle.</p>
+                </div>
+              ) : (
+                <>
+                  {heroSimmered && (
+                    <section className="mb-8 sm:mb-10">
+                      <PickCard pick={heroSimmered} isFeatured />
+                    </section>
+                  )}
+
+                  {remainingSimmered.length > 0 && (
+                    <section>
+                      <div className="flex items-center justify-between mb-4 sm:mb-6">
+                        <h2 className="font-display text-xl sm:text-2xl font-semibold text-cream-100">
+                          Runners-Up
+                        </h2>
+                        <span className="text-xs text-cream-300/40">
+                          {remainingSimmered.length} titles
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-3 sm:gap-x-4 gap-y-6 sm:gap-y-10">
+                        {remainingSimmered.map((pick, i) => (
+                          <PickCard key={pick.tmdb_id} pick={pick} isFirstRow={i < FIRST_ROW_COUNT} />
+                        ))}
+                      </div>
+                    </section>
+                  )}
+                </>
+              )}
+            </>
+
+          ) : (
+            /* ═══ FRESH DROPS — MOVIES / TV TABS ═══ */
+            <>
+              <div className="flex items-center gap-3 mb-6 sm:mb-8">
+                <div className="h-px flex-1 bg-white/10" />
+                <span className="text-[10px] sm:text-xs uppercase tracking-widest text-cream-300/50">
+                  Week of {guide?.week_of}
+                </span>
+                <div className="h-px flex-1 bg-white/10" />
+              </div>
+
+              {filteredFresh.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-20">
+                  <div className="w-16 h-16 rounded-full bg-white/5 border border-white/10 flex items-center justify-center mb-4">
+                    <svg className="w-8 h-8 text-cream-300/20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                  </div>
+                  <p className="text-cream-300/50 text-sm">No titles found.</p>
+                  <button
+                    onClick={() => { setActiveTab('movies'); setSearchQuery('') }}
+                    className="mt-3 text-xs text-gold-400 hover:text-gold-500 cursor-pointer transition-colors"
+                  >
+                    Back to Movies
+                  </button>
+                </div>
+              ) : (
+                <>
+                  {/* Hero — #1 Fresh Drop */}
+                  {heroFresh && (
+                    <section className="mb-8 sm:mb-10">
+                      <PickCard pick={heroFresh} isFeatured hideScores />
+                    </section>
+                  )}
+
+                  {/* Grid */}
+                  {remainingFresh.length > 0 && (
+                    <section>
+                      <div className="flex items-center justify-between mb-4 sm:mb-6">
+                        <div>
+                          <h2 className="font-display text-xl sm:text-2xl font-semibold text-cream-100">
+                            Fresh Drops
+                          </h2>
+                          <p className="text-xs text-cream-300/40 mt-1">
+                            New this week — sorted by buzz
+                          </p>
+                        </div>
+                        <span className="text-xs text-cream-300/40">
+                          {remainingFresh.length} more
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-3 sm:gap-x-4 gap-y-6 sm:gap-y-10">
+                        {remainingFresh.map((pick, i) => (
+                          <PickCard key={pick.tmdb_id} pick={pick} isFirstRow={i < FIRST_ROW_COUNT} hideScores />
+                        ))}
+                      </div>
+                    </section>
+                  )}
+                </>
+              )}
+            </>
+          )}
+
+        </ErrorBoundary>
+      </main>
+
+      <Footer />
+    </div>
+  )
+}
+
+export default App

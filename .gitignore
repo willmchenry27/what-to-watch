@@ -10,6 +10,10 @@ lerna-debug.log*
 .env
 .env.*
 node_modules
+*.db
+*.db-shm
+*.db-wal
+server/tmdb-results.json
 dist
 dist-ssr
 *.local

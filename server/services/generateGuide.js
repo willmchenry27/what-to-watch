@@ -1,10 +1,10 @@
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') })
 
-const { fetchAllTmdbPicks, getDateWindow, fetchWatchProviders } = require('./fetchTmdb')
+const { fetchAllTmdbPicks, getDateWindow, fetchWatchProviders, fetchExternalIds } = require('./fetchTmdb')
 const { enrichWithOmdbScores } = require('./fetchOmdb')
 const { getDb } = require('../db/schema')
 
-const MIN_TMDB_VOTES = 10
+const MIN_TMDB_VOTES = 5
 
 function calculateCombinedScore(imdbScore, rtScore, tmdbVoteAverage, tmdbVoteCount) {
   const normalizedImdb = imdbScore ? imdbScore * 10 : null
@@ -34,33 +34,52 @@ function rankPicks(picks) {
     .map((p, i) => ({ ...p, rank: i + 1 }))
 }
 
-function getPreviousWeekWindow() {
+function getSimmeredGuideIds() {
   const dw = getDateWindow()
-  const prevSat = new Date(dw.gte + 'T00:00:00')
-  prevSat.setDate(prevSat.getDate() - 7)
-  const prevFri = new Date(prevSat)
-  prevFri.setDate(prevSat.getDate() + 6)
   const fmt = (d) => d.toISOString().split('T')[0]
-  return { gte: fmt(prevSat), lte: fmt(prevFri) }
+  const ids = []
+  for (let w = 1; w <= 4; w++) {
+    const sat = new Date(dw.gte + 'T00:00:00')
+    sat.setDate(sat.getDate() - (w * 7))
+    ids.push(`guide-${fmt(sat)}`)
+  }
+  return ids
 }
 
-function loadPreviousWeekPicks() {
+function loadSimmeredCandidates() {
   const db = getDb()
-  const prevWindow = getPreviousWeekWindow()
-  const prevGuideId = `guide-${prevWindow.gte}`
+  const guideIds = getSimmeredGuideIds()
 
-  const rows = db.prepare(
-    "SELECT * FROM picks WHERE guide_id = ? AND cohort = 'fresh' ORDER BY rank ASC"
-  ).all(prevGuideId)
-
-  if (rows.length === 0) {
-    console.log(`  No previous fresh picks found for ${prevGuideId}`)
-    return []
+  const allRows = []
+  for (const guideId of guideIds) {
+    const rows = db.prepare(
+      "SELECT * FROM picks WHERE guide_id = ? AND cohort = 'fresh' ORDER BY rank ASC"
+    ).all(guideId)
+    if (rows.length > 0) {
+      console.log(`  Found ${rows.length} fresh picks from ${guideId}`)
+      allRows.push(...rows.map((r) => ({ ...r, _guideId: guideId })))
+    } else {
+      console.log(`  No fresh picks found for ${guideId}`)
+    }
   }
 
-  console.log(`  Found ${rows.length} fresh picks from ${prevGuideId} to simmer`)
-  return rows.map((p) => ({
+  if (allRows.length === 0) return []
+
+  // Deduplicate by tmdb_id — keep the newer row (first guide ID is more recent)
+  const seen = new Map()
+  for (const row of allRows) {
+    if (!seen.has(row.tmdb_id)) {
+      seen.set(row.tmdb_id, row)
+    }
+  }
+  const deduped = [...seen.values()]
+  const dupes = allRows.length - deduped.length
+  if (dupes > 0) console.log(`  Deduped: removed ${dupes} titles appearing in both weeks`)
+  console.log(`  Total simmer candidates: ${deduped.length}`)
+
+  return deduped.map((p) => ({
     tmdb_id: p.tmdb_id,
+    imdb_id: p.imdb_id || null,
     title: p.title,
     year: p.year,
     type: p.type,
@@ -69,6 +88,7 @@ function loadPreviousWeekPicks() {
     description: p.description,
     platform: p.platform,
     platform_slug: p.platform_slug,
+    availability: p.availability,
     poster_path: p.poster_path,
     backdrop_path: p.backdrop_path,
     cast: JSON.parse(p.cast_list),
@@ -89,8 +109,8 @@ function saveToDatabase(weekOf, freshPicks, simmeredPicks) {
   )
   const deletePicks = db.prepare('DELETE FROM picks WHERE guide_id = ?')
   const insertPick = db.prepare(`
-    INSERT INTO picks (guide_id, rank, tmdb_id, title, year, type, season, genres, description, imdb_score, rt_score, combined_score, platform, platform_slug, poster_path, backdrop_path, cast_list, director, in_theaters, cohort, tmdb_vote_average, tmdb_vote_count)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO picks (guide_id, rank, tmdb_id, imdb_id, title, year, type, season, genres, description, imdb_score, rt_score, combined_score, platform, platform_slug, availability, poster_path, backdrop_path, cast_list, director, in_theaters, cohort, tmdb_vote_average, tmdb_vote_count)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `)
 
   const transaction = db.transaction(() => {
@@ -99,11 +119,11 @@ function saveToDatabase(weekOf, freshPicks, simmeredPicks) {
 
     for (const p of freshPicks) {
       insertPick.run(
-        guideId, p.rank, p.tmdb_id || null, p.title, p.year || null,
+        guideId, p.rank, p.tmdb_id || null, p.imdb_id || null, p.title, p.year || null,
         p.type, p.season || null, JSON.stringify(p.genres || []),
         p.description || null, p.imdb_score ?? null, p.rt_score ?? null,
         p.combined_score ?? null, p.platform || null, p.platform_slug || null,
-        p.poster_path || null, p.backdrop_path || null,
+        p.availability || null, p.poster_path || null, p.backdrop_path || null,
         JSON.stringify(p.cast || []), p.director || null,
         p.in_theaters ? 1 : 0, 'fresh',
         p.tmdb_vote_average ?? null, p.tmdb_vote_count ?? null
@@ -112,11 +132,11 @@ function saveToDatabase(weekOf, freshPicks, simmeredPicks) {
 
     for (const p of simmeredPicks) {
       insertPick.run(
-        guideId, p.rank, p.tmdb_id || null, p.title, p.year || null,
+        guideId, p.rank, p.tmdb_id || null, p.imdb_id || null, p.title, p.year || null,
         p.type, p.season || null, JSON.stringify(p.genres || []),
         p.description || null, p.imdb_score ?? null, p.rt_score ?? null,
         p.combined_score ?? null, p.platform || null, p.platform_slug || null,
-        p.poster_path || null, p.backdrop_path || null,
+        p.availability || null, p.poster_path || null, p.backdrop_path || null,
         JSON.stringify(p.cast || []), p.director || null,
         p.in_theaters ? 1 : 0, 'simmered',
         p.tmdb_vote_average ?? null, p.tmdb_vote_count ?? null
@@ -131,7 +151,7 @@ function saveToDatabase(weekOf, freshPicks, simmeredPicks) {
 async function generateGuide() {
   const startTime = Date.now()
   const errors = []
-  console.log('=== Generating Weekly Guide (Simmer Model) ===\n')
+  console.log('=== Generating Weekly Guide (2-Week Simmer Model) ===\n')
 
   // ── FRESH DROPS: This week's new releases, sorted by popularity ──
   console.log('Step 1: Fetching this week\'s FRESH DROPS from TMDB...')
@@ -147,6 +167,7 @@ async function generateGuide() {
   }
 
   let freshPicks = tmdbPicks
+    .filter((p) => !p.in_theaters || p.platform)
     .sort((a, b) => (b.popularity || 0) - (a.popularity || 0))
     .map((p, i) => ({
       ...p,
@@ -161,13 +182,13 @@ async function generateGuide() {
     console.log(`    #${p.rank} ${p.title} (${p.year}) — popularity ${p.popularity?.toFixed(1)}`)
   }
 
-  // ── SIMMERED PICKS: Last week's releases, now scored via OMDb ──
-  console.log('\nStep 2: Loading last week\'s picks for SIMMERED scoring...')
-  const prevPicks = loadPreviousWeekPicks()
+  // ── SIMMERED PICKS: Last 2 weeks' releases, now scored ──
+  console.log('\nStep 2: Loading picks from past 2 weeks for SIMMERED scoring...')
+  const prevPicks = loadSimmeredCandidates()
 
   let simmeredPicks = []
   if (prevPicks.length > 0) {
-    console.log('\nStep 3: Enriching simmered picks with OMDb scores...')
+    console.log('\nStep 3: Enriching simmered picks with OMDb scores (by IMDb ID)...')
     let scored
     try {
       scored = await enrichWithOmdbScores(prevPicks)
@@ -177,7 +198,7 @@ async function generateGuide() {
       scored = prevPicks // continue with unenriched picks
     }
 
-    // Re-fetch TMDB vote data and watch providers for ALL simmered picks (providers change week to week)
+    // Re-fetch TMDB vote data, watch providers, and external IDs for ALL simmered picks
     const withTmdbId = scored.filter((p) => p.tmdb_id)
     if (withTmdbId.length > 0) {
       console.log(`\nRefreshing TMDB data for ${withTmdbId.length} simmered picks...`)
@@ -185,37 +206,60 @@ async function generateGuide() {
         const batch = withTmdbId.slice(i, i + 5)
         await Promise.all(batch.map(async (p) => {
           const mediaType = p.type === 'tv' ? 'tv' : 'movie'
-          // Fetch vote data if missing
-          if (p.tmdb_vote_average == null) {
-            try {
-              const res = await fetch(`https://api.themoviedb.org/3/${mediaType}/${p.tmdb_id}?api_key=${process.env.TMDB_API_KEY}`)
-              if (res.ok) {
-                const data = await res.json()
-                if (data.vote_average) {
-                  p.tmdb_vote_average = data.vote_average
-                  p.tmdb_vote_count = data.vote_count || null
-                }
-              }
-            } catch {}
+          try {
+            const res = await fetch(`https://api.themoviedb.org/3/${mediaType}/${p.tmdb_id}?api_key=${process.env.TMDB_API_KEY}`)
+            if (res.ok) {
+              const data = await res.json()
+              p.tmdb_vote_average = data.vote_average ?? p.tmdb_vote_average
+              p.tmdb_vote_count = data.vote_count ?? p.tmdb_vote_count
+            }
+          } catch {}
+          // Fetch IMDb ID if missing
+          if (!p.imdb_id) {
+            const extIds = await fetchExternalIds(p.tmdb_id, p.type)
+            if (extIds.imdb_id) p.imdb_id = extIds.imdb_id
           }
-          // Always re-fetch watch providers (they change over time)
+          // Re-fetch watch providers (they change over time)
           const providers = await fetchWatchProviders(p.tmdb_id, p.type)
-          if (providers.platform) {
-            p.platform = providers.platform
-            p.platform_slug = providers.platform_slug
-          }
+          p.platform = providers.platform
+          p.platform_slug = providers.platform_slug
+          p.availability = providers.availability
         }))
         if (i + 5 < withTmdbId.length) await new Promise((r) => setTimeout(r, 250))
       }
       const withProviders = withTmdbId.filter((p) => p.platform)
       console.log(`  Refreshed ${withProviders.length}/${withTmdbId.length} picks with providers`)
+
+      // Re-score picks that gained an imdb_id during refresh but weren't scored by OMDb yet
+      const needsRescore = withTmdbId.filter((p) => p.imdb_id && p.imdb_score == null && p.rt_score == null)
+      if (needsRescore.length > 0) {
+        console.log(`  Re-scoring ${needsRescore.length} picks that gained IMDb IDs...`)
+        try {
+          const rescored = await enrichWithOmdbScores(needsRescore)
+          for (const r of rescored) {
+            const pick = withTmdbId.find((p) => p.tmdb_id === r.tmdb_id)
+            if (pick) {
+              pick.imdb_score = r.imdb_score
+              pick.rt_score = r.rt_score
+            }
+          }
+        } catch {}
+      }
     }
 
     simmeredPicks = scored
+      .filter((p) => !p.in_theaters || p.platform)
       .map((p) => ({
         ...p,
         combined_score: calculateCombinedScore(p.imdb_score, p.rt_score, p.tmdb_vote_average, p.tmdb_vote_count),
       }))
+
+    // Quality filter: drop picks with no score AND no US platform (unwatchable noise)
+    const beforeQuality = simmeredPicks.length
+    simmeredPicks = simmeredPicks.filter((p) => p.combined_score !== null || p.platform)
+    const qualityDropped = beforeQuality - simmeredPicks.length
+    if (qualityDropped > 0) console.log(`  Quality filter: removed ${qualityDropped} unscored picks with no US platform`)
+
     simmeredPicks = rankPicks(simmeredPicks)
 
     console.log(`\n  Simmered Picks: ${simmeredPicks.length} titles`)

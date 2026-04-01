@@ -22,6 +22,7 @@ function formatGuide(guide, picks) {
       combined_score: p.combined_score,
       platform: p.platform,
       platform_slug: p.platform_slug,
+      availability: p.availability || undefined,
       poster_path: p.poster_path,
       backdrop_path: p.backdrop_path,
       cast: JSON.parse(p.cast_list),

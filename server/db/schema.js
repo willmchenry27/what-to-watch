@@ -40,6 +40,7 @@ function createTables() {
       combined_score INTEGER,
       platform TEXT,
       platform_slug TEXT,
+      availability TEXT,
       poster_path TEXT,
       backdrop_path TEXT,
       cast_list TEXT NOT NULL DEFAULT '[]',
@@ -50,6 +51,14 @@ function createTables() {
     );
 
     CREATE INDEX IF NOT EXISTS idx_picks_guide ON picks(guide_id);
+
+    CREATE TABLE IF NOT EXISTS user_actions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tmdb_id INTEGER NOT NULL,
+      action_type TEXT NOT NULL CHECK(action_type IN ('watch', 'save', 'seen', 'dismiss')),
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(tmdb_id, action_type)
+    );
   `)
 }
 
@@ -65,6 +74,29 @@ function migrate() {
   }
   if (!cols.find((c) => c.name === 'tmdb_vote_count')) {
     db.exec("ALTER TABLE picks ADD COLUMN tmdb_vote_count INTEGER")
+  }
+  if (!cols.find((c) => c.name === 'availability')) {
+    db.exec("ALTER TABLE picks ADD COLUMN availability TEXT")
+  }
+  if (!cols.find((c) => c.name === 'imdb_id')) {
+    db.exec("ALTER TABLE picks ADD COLUMN imdb_id TEXT")
+  }
+
+  // Add 'dismiss' to user_actions CHECK constraint
+  const tableInfo = db.prepare("SELECT sql FROM sqlite_master WHERE name='user_actions'").get()
+  if (tableInfo && !tableInfo.sql.includes('dismiss')) {
+    db.exec(`
+      CREATE TABLE user_actions_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        tmdb_id INTEGER NOT NULL,
+        action_type TEXT NOT NULL CHECK(action_type IN ('watch', 'save', 'seen', 'dismiss')),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(tmdb_id, action_type)
+      );
+      INSERT INTO user_actions_new SELECT * FROM user_actions;
+      DROP TABLE user_actions;
+      ALTER TABLE user_actions_new RENAME TO user_actions;
+    `)
   }
 }
 

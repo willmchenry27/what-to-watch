@@ -16,13 +16,19 @@ function tmdbUrl(pick) {
   return `https://www.themoviedb.org/${mediaType}/${pick.tmdb_id}`
 }
 
+function actionLinks(pick) {
+  const appUrl = process.env.APP_URL || 'http://localhost:3001'
+  const linkStyle = 'color:#555;font-size:10px;text-decoration:none;'
+  return `<div style="margin-top:6px;"><a href="${appUrl}/api/actions/seen/${pick.tmdb_id}" style="${linkStyle}">Seen it</a> &nbsp;&middot;&nbsp; <a href="${appUrl}/api/actions/dismiss/${pick.tmdb_id}" style="${linkStyle}">Not for me</a></div>`
+}
+
 function buildPickRow(pick, rank, showScore) {
   const scoreHtml = showScore && pick.combined_score != null
     ? `<span style="color:${scoreColor(pick.combined_score)};font-weight:800;font-size:20px;">${pick.combined_score}</span>`
     : '<span style="color:#444;font-size:14px;">—</span>'
   const imdb = showScore && pick.imdb_score != null ? `IMDb <span style="color:${scoreColor(pick.imdb_score * 10)};font-weight:600;">${pick.imdb_score}</span>` : ''
   const rt = showScore && pick.rt_score != null ? `RT <span style="color:${scoreColor(pick.rt_score)};font-weight:600;">${pick.rt_score}%</span>` : ''
-  const tmdb = showScore && !imdb && !rt && pick.tmdb_vote_average != null ? `TMDB <span style="color:${scoreColor(pick.tmdb_vote_average * 10)};font-weight:600;">${pick.tmdb_vote_average}</span>` : ''
+  const tmdb = showScore && !imdb && !rt && pick.tmdb_vote_average != null ? `TMDB <span style="color:${scoreColor(pick.tmdb_vote_average * 10)};font-weight:600;">${Math.round(pick.tmdb_vote_average * 10) / 10}</span>` : ''
   const scores = [imdb, rt, tmdb].filter(Boolean).join(' &nbsp;&middot;&nbsp; ')
   const platform = pick.platform ? `<span style="display:inline-block;background:rgba(255,255,255,0.08);color:#ccc;font-size:10px;font-weight:600;padding:2px 8px;border-radius:4px;text-transform:uppercase;letter-spacing:0.5px;">${pick.platform}</span>` : ''
 
@@ -35,9 +41,10 @@ function buildPickRow(pick, rank, showScore) {
               <span style="display:inline-block;width:32px;height:32px;line-height:32px;text-align:center;border-radius:50%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:#c9a84c;font-weight:700;font-size:13px;">#${rank}</span>
             </td>
             <td style="vertical-align:top;">
-              <div style="font-size:16px;font-weight:700;color:#f5f0e8;margin-bottom:4px;">${tmdbUrl(pick) ? `<a href="${tmdbUrl(pick)}" style="color:#f5f0e8;text-decoration:none;">${pick.title}</a>` : pick.title} <span style="color:#888;font-weight:400;font-size:13px;">(${pick.year || ''})</span></div>
+              <div style="font-size:16px;font-weight:700;color:#f5f0e8;margin-bottom:4px;">${tmdbUrl(pick) ? `<a href="${tmdbUrl(pick)}" style="color:#f5f0e8;text-decoration:none;">${pick.title}</a>` : pick.title}</div>
               <div style="font-size:12px;color:#888;margin-bottom:${scores ? '6' : '0'}px;">${(pick.genres || []).slice(0, 3).join(', ')} ${platform ? '&nbsp;&middot;&nbsp;' + platform : ''}</div>
               ${scores ? `<div style="font-size:12px;color:#999;">${scores}</div>` : ''}
+              ${showScore ? actionLinks(pick) : ''}
             </td>
             ${showScore ? `<td width="60" style="vertical-align:middle;text-align:right;">${scoreHtml}</td>` : ''}
           </tr>
@@ -70,7 +77,7 @@ function buildEmailHtml(guide, allPicks) {
             <td style="padding:20px 24px;">
               <p style="margin:0 0 6px;font-size:11px;font-weight:700;color:#c9a84c;text-transform:uppercase;letter-spacing:2px;">#1 Most Anticipated</p>
               <h2 style="margin:0 0 6px;font-size:24px;font-weight:800;color:#f5f0e8;">${tmdbUrl(freshHero) ? `<a href="${tmdbUrl(freshHero)}" style="color:#f5f0e8;text-decoration:none;">${freshHero.title}</a>` : freshHero.title}</h2>
-              <p style="margin:0 0 10px;font-size:13px;color:#888;">${freshHero.year || ''} &middot; ${(freshHero.genres || []).join(', ')}${freshHero.platform ? ' &middot; ' + freshHero.platform : ''}</p>
+              <p style="margin:0 0 10px;font-size:13px;color:#888;">${(freshHero.genres || []).join(', ')}${freshHero.platform ? ' &middot; ' + freshHero.platform : ''}</p>
               ${freshHero.description ? `<p style="margin:0;font-size:13px;line-height:1.5;color:#aaa;">${freshHero.description.slice(0, 200)}${freshHero.description.length > 200 ? '...' : ''}</p>` : ''}
             </td>
           </tr>
@@ -87,7 +94,7 @@ function buildEmailHtml(guide, allPicks) {
     : ''
   const simImdb = simmeredHero && simmeredHero.imdb_score != null ? `<span style="color:#a0a0a0;font-size:13px;margin-right:12px;">IMDb <span style="color:${scoreColor(simmeredHero.imdb_score * 10)};font-weight:700;">${simmeredHero.imdb_score}</span></span>` : ''
   const simRt = simmeredHero && simmeredHero.rt_score != null ? `<span style="color:#a0a0a0;font-size:13px;">RT <span style="color:${scoreColor(simmeredHero.rt_score)};font-weight:700;">${simmeredHero.rt_score}%</span></span>` : ''
-  const simTmdb = simmeredHero && !simImdb && !simRt && simmeredHero.tmdb_vote_average != null ? `<span style="color:#a0a0a0;font-size:13px;">TMDB <span style="color:${scoreColor(simmeredHero.tmdb_vote_average * 10)};font-weight:700;">${simmeredHero.tmdb_vote_average}</span></span>` : ''
+  const simTmdb = simmeredHero && !simImdb && !simRt && simmeredHero.tmdb_vote_average != null ? `<span style="color:#a0a0a0;font-size:13px;">TMDB <span style="color:${scoreColor(simmeredHero.tmdb_vote_average * 10)};font-weight:700;">${Math.round(simmeredHero.tmdb_vote_average * 10) / 10}</span></span>` : ''
 
   const simHeroBlock = simmeredHero ? `
     <tr>
@@ -98,9 +105,10 @@ function buildEmailHtml(guide, allPicks) {
             <td style="padding:20px 24px;">
               <p style="margin:0 0 6px;font-size:11px;font-weight:700;color:#c9a84c;text-transform:uppercase;letter-spacing:2px;">#1 Top Rated</p>
               <h2 style="margin:0 0 6px;font-size:24px;font-weight:800;color:#f5f0e8;">${tmdbUrl(simmeredHero) ? `<a href="${tmdbUrl(simmeredHero)}" style="color:#f5f0e8;text-decoration:none;">${simmeredHero.title}</a>` : simmeredHero.title}</h2>
-              <p style="margin:0 0 10px;font-size:13px;color:#888;">${simmeredHero.year || ''} &middot; ${(simmeredHero.genres || []).join(', ')}${simmeredHero.platform ? ' &middot; ' + simmeredHero.platform : ''}</p>
+              <p style="margin:0 0 10px;font-size:13px;color:#888;">${(simmeredHero.genres || []).join(', ')}${simmeredHero.platform ? ' &middot; ' + simmeredHero.platform : ''}</p>
               <div style="margin:0 0 12px;">${simScoreHtml}${simImdb}${simRt}${simTmdb}</div>
-              ${simmeredHero.description ? `<p style="margin:0;font-size:13px;line-height:1.5;color:#aaa;">${simmeredHero.description.slice(0, 200)}${simmeredHero.description.length > 200 ? '...' : ''}</p>` : ''}
+              ${simmeredHero.description ? `<p style="margin:0 0 10px;font-size:13px;line-height:1.5;color:#aaa;">${simmeredHero.description.slice(0, 200)}${simmeredHero.description.length > 200 ? '...' : ''}</p>` : ''}
+              ${actionLinks(simmeredHero)}
             </td>
           </tr>
         </table>
@@ -111,14 +119,11 @@ function buildEmailHtml(guide, allPicks) {
 
   // Simmered section (only if we have scored content)
   const simmeredSection = simmeredSorted.length > 0 ? `
-    <!-- Divider -->
-    <tr><td style="padding:8px 0 24px;"><div style="height:1px;background:rgba(255,255,255,0.08);"></div></td></tr>
-
     <!-- Last Week's Top Rated Header -->
     <tr>
       <td style="padding:0 0 16px;">
-        <h3 style="margin:0 0 4px;font-size:14px;font-weight:700;color:#c9a84c;text-transform:uppercase;letter-spacing:1px;">Last Week's Top Rated</h3>
-        <p style="margin:0;font-size:12px;color:#555;">Scores settled — ranked by IMDb + Rotten Tomatoes</p>
+        <h3 style="margin:0 0 4px;font-size:14px;font-weight:700;color:#c9a84c;text-transform:uppercase;letter-spacing:1px;">Top Rated</h3>
+        <p style="margin:0;font-size:12px;color:#555;">Scores settled — ranked by IMDb + community ratings</p>
       </td>
     </tr>
 
@@ -150,8 +155,7 @@ function buildEmailHtml(guide, allPicks) {
             </td>
           </tr>
 
-          <!-- Divider -->
-          <tr><td style="padding:0 0 24px;"><div style="height:1px;background:rgba(255,255,255,0.08);"></div></td></tr>
+          ${simmeredSection}
 
           <!-- Fresh Drops Header -->
           <tr>
@@ -165,15 +169,13 @@ function buildEmailHtml(guide, allPicks) {
 
           ${freshRows ? `<tr><td><table width="100%" cellpadding="0" cellspacing="0" role="presentation">${freshRows}</table></td></tr>` : ''}
 
-          ${simmeredSection}
-
           <!-- Footer -->
           <tr>
             <td style="padding:32px 0 0;text-align:center;">
               <div style="height:1px;background:rgba(255,255,255,0.06);margin-bottom:24px;"></div>
               <p style="margin:0;font-size:13px;font-weight:600;color:#888;">What to Watch</p>
               <p style="margin:4px 0 0;font-size:11px;color:#555;">Ranked by critics, updated every Friday.</p>
-              <p style="margin:4px 0 0;font-size:10px;color:#444;">Powered by IMDb + Rotten Tomatoes</p>
+              <p style="margin:4px 0 0;font-size:10px;color:#444;">Powered by IMDb + TMDB</p>
             </td>
           </tr>
 

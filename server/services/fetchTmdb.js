@@ -4,21 +4,23 @@ const TMDB_KEY = process.env.TMDB_API_KEY
 const BASE = 'https://api.themoviedb.org/3'
 const IMG_BASE = 'https://image.tmdb.org/t/p'
 
-// Platform mapping from TMDB watch provider IDs
-const PROVIDER_MAP = {
-  8: { name: 'Netflix', slug: 'netflix' },
-  9: { name: 'Amazon Prime Video', slug: 'amazon-prime' },
-  337: { name: 'Disney+', slug: 'disney-plus' },
-  350: { name: 'Apple TV+', slug: 'apple-tv-plus' },
-  384: { name: 'Max', slug: 'max' },
-  1899: { name: 'Max', slug: 'max' },
-  15: { name: 'Hulu', slug: 'hulu' },
-  386: { name: 'Peacock', slug: 'peacock' },
-  531: { name: 'Paramount+', slug: 'paramount-plus' },
-  43: { name: 'Starz', slug: 'starz' },
-  283: { name: 'Crunchyroll', slug: 'crunchyroll' },
-  526: { name: 'AMC+', slug: 'amc-plus' },
-}
+// Priority-ordered streaming providers (subscription)
+const STREAMING_PRIORITY = [
+  { id: 8,   name: 'Netflix',            slug: 'netflix' },
+  { id: 9,   name: 'Amazon Prime Video', slug: 'prime' },
+  { id: 337, name: 'Disney+',            slug: 'disney-plus' },
+  { id: 384, name: 'Max',                slug: 'max' },
+  { id: 2,   name: 'Apple TV+',          slug: 'apple-tv-plus' },
+  { id: 386, name: 'Peacock',            slug: 'peacock' },
+  { id: 531, name: 'Paramount+',         slug: 'paramount-plus' },
+]
+
+// Free ad-supported providers
+const FREE_PRIORITY = [
+  { id: 546, name: 'Tubi',    slug: 'tubi' },
+  { id: 613, name: 'Pluto',   slug: 'pluto-tv' },
+  { id: 558, name: 'Freevee', slug: 'freevee' },
+]
 
 // TMDB genre ID to name mapping
 const MOVIE_GENRES = {
@@ -155,45 +157,86 @@ async function fetchCredits(tmdbId, type) {
   }
 }
 
+function emptyProviderResult() {
+  return { platform: null, platform_slug: null, availability: null }
+}
+
+function slugifyProviderName(name) {
+  return name
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/\+/g, ' plus ')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
+function pickProvider(providers, priority = []) {
+  if (!providers.length) return null
+
+  for (const preferred of priority) {
+    const match = providers.find((provider) => provider.provider_id === preferred.id)
+    if (match) {
+      return { platform: preferred.name, platform_slug: preferred.slug }
+    }
+  }
+
+  const [provider] = providers
+  if (!provider?.provider_name) return null
+
+  return {
+    platform: provider.provider_name,
+    platform_slug: slugifyProviderName(provider.provider_name),
+  }
+}
+
 async function fetchWatchProviders(tmdbId, type) {
   try {
     const data = await tmdbFetch(`/${type}/${tmdbId}/watch/providers`)
     const us = data.results?.US
-    if (!us) return { platform: null, platform_slug: null }
+    if (!us) return emptyProviderResult()
 
-    // Check flatrate (streaming) first, then buy/rent
-    const providers = us.flatrate || us.buy || us.rent || []
-    for (const p of providers) {
-      const mapped = PROVIDER_MAP[p.provider_id]
-      if (mapped) return { platform: mapped.name, platform_slug: mapped.slug }
-    }
+    const streaming = pickProvider(us.flatrate || [], STREAMING_PRIORITY)
+    if (streaming) return { ...streaming, availability: 'streaming' }
 
-    return { platform: null, platform_slug: null }
+    const free = pickProvider([...(us.free || []), ...(us.ads || [])], FREE_PRIORITY)
+    if (free) return { ...free, availability: 'free' }
+
+    const buy = pickProvider(us.buy || [])
+    if (buy) return { ...buy, availability: 'buy' }
+
+    const rent = pickProvider(us.rent || [])
+    if (rent) return { ...rent, availability: 'rent' }
+
+    return emptyProviderResult()
   } catch {
-    return { platform: null, platform_slug: null }
+    return emptyProviderResult()
+  }
+}
+
+async function fetchExternalIds(tmdbId, type) {
+  try {
+    const data = await tmdbFetch(`/${type}/${tmdbId}/external_ids`)
+    return { imdb_id: data.imdb_id || null }
+  } catch {
+    return { imdb_id: null }
   }
 }
 
 async function enrichPick(pick) {
-  const [credits, providers] = await Promise.all([
+  const [credits, providers, externalIds] = await Promise.all([
     fetchCredits(pick.tmdb_id, pick.type),
     fetchWatchProviders(pick.tmdb_id, pick.type),
+    fetchExternalIds(pick.tmdb_id, pick.type),
   ])
-
-  // If it's in theaters, label it as such
-  let platform = providers.platform
-  let platformSlug = providers.platform_slug
-  if (pick.in_theaters && !platform) {
-    platform = 'In Theaters'
-    platformSlug = 'in-theaters'
-  }
 
   return {
     ...pick,
     cast: credits.cast,
     director: credits.director,
-    platform,
-    platform_slug: platformSlug,
+    platform: providers.platform,
+    platform_slug: providers.platform_slug,
+    availability: providers.availability,
+    imdb_id: externalIds.imdb_id,
   }
 }
 
@@ -241,7 +284,7 @@ async function fetchAllTmdbPicks(overrideDateWindow) {
   return { picks: enriched, week_of: dateWindow.gte }
 }
 
-module.exports = { fetchAllTmdbPicks, getDateWindow, fetchWatchProviders }
+module.exports = { fetchAllTmdbPicks, getDateWindow, fetchWatchProviders, fetchExternalIds }
 
 // Run standalone if called directly
 if (require.main === module) {

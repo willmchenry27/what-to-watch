@@ -5,6 +5,12 @@ const { generateGuide } = require('./generateGuide')
 const { sendWeeklyEmail } = require('./emailService')
 const { getDb } = require('../db/schema')
 
+function getHiddenTmdbIds() {
+  const db = getDb()
+  const rows = db.prepare("SELECT tmdb_id FROM user_actions WHERE action_type IN ('seen', 'dismiss')").all()
+  return new Set(rows.map((r) => r.tmdb_id))
+}
+
 function loadGuideData(guideId) {
   const db = getDb()
   const guide = db.prepare('SELECT * FROM weekly_guides WHERE id = ?').get(guideId)
@@ -29,18 +35,21 @@ async function runPipeline() {
     console.log(`\nGuide generated: ${guideId} (${total} picks)`)
 
     const { guide, picks } = loadGuideData(guideId)
-    await sendWeeklyEmail(guide, picks)
+    const hiddenIds = getHiddenTmdbIds()
+    const unseen = picks.filter((p) => !hiddenIds.has(p.tmdb_id))
+    await sendWeeklyEmail(guide, unseen)
     console.log(`\n[${new Date().toISOString()}] Pipeline complete — guide + email sent.\n`)
   } catch (err) {
     console.error(`[${new Date().toISOString()}] Pipeline failed:`, err)
+    throw err
   }
 }
 
 function startScheduler() {
   // Every Friday at 2:00 PM ET
-  cron.schedule('0 14 * * 5', () => {
+  cron.schedule('0 14 * * 5', async () => {
     console.log('\n=== Friday cron triggered ===')
-    runPipeline()
+    await runPipeline()
   }, {
     timezone: 'America/New_York',
   })

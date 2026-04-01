@@ -21,6 +21,7 @@ function searchFilter(picks, query) {
 function App() {
   const [activeTab, setActiveTab] = useState('movies')
   const [searchQuery, setSearchQuery] = useState('')
+  const [showAllFresh, setShowAllFresh] = useState(false)
 
   const { guide, picks: allPicks, loading } = useGuide()
 
@@ -49,10 +50,15 @@ function App() {
   const remainingSimmered = filteredSimmered.filter((p) => p !== heroSimmered)
 
   const FIRST_ROW_COUNT = 4
+  const FRESH_GRID_LIMIT = 4
+
+  const visibleFresh = showAllFresh ? remainingFresh : remainingFresh.slice(0, FRESH_GRID_LIMIT)
+  const hasMoreFresh = remainingFresh.length > FRESH_GRID_LIMIT
 
   function handleTabChange(tab) {
     setActiveTab(tab)
     setSearchQuery('')
+    setShowAllFresh(false)
   }
 
   return (
@@ -180,10 +186,20 @@ function App() {
                         </span>
                       </div>
                       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-3 sm:gap-x-4 gap-y-6 sm:gap-y-10">
-                        {remainingFresh.map((pick, i) => (
+                        {visibleFresh.map((pick, i) => (
                           <PickCard key={pick.tmdb_id} pick={pick} isFirstRow={i < FIRST_ROW_COUNT} hideScores />
                         ))}
                       </div>
+                      {hasMoreFresh && !showAllFresh && (
+                        <div className="mt-6 sm:mt-8 text-center">
+                          <button
+                            onClick={() => setShowAllFresh(true)}
+                            className="text-sm text-gold-400 hover:text-gold-500 cursor-pointer transition-colors"
+                          >
+                            See all {remainingFresh.length + 1} fresh drops
+                          </button>
+                        </div>
+                      )}
                     </section>
                   )}
                 </>

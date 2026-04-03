@@ -188,7 +188,7 @@ function buildEmailHtml(guide, allPicks) {
 }
 
 async function sendWeeklyEmail(guide, allPicks) {
-  const to = process.env.NOTIFICATION_EMAIL
+  const to = process.env.NOTIFICATION_EMAIL.split(',').map(e => e.trim())
   if (!to) throw new Error('Missing NOTIFICATION_EMAIL in .env')
   if (!process.env.RESEND_API_KEY || process.env.RESEND_API_KEY === 'YOUR_RESEND_API_KEY_HERE') {
     throw new Error('Missing or placeholder RESEND_API_KEY in .env')

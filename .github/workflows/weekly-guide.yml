@@ -23,30 +23,13 @@ jobs:
         working-directory: server
         run: npm install
 
-      - name: Download database from previous run
-        uses: dawidd6/action-download-artifact@v6
-        with:
-          name: wtw-database
-          path: server/
-          search_artifacts: true
-          if_no_artifact_found: warn
-
       - name: Run pipeline
         env:
           TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
           OMDB_API_KEY: ${{ secrets.OMDB_API_KEY }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           NOTIFICATION_EMAIL: ${{ secrets.NOTIFICATION_EMAIL }}
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
         working-directory: server
         run: node scripts/run-pipeline.js
-
-      - name: Upload database for next run
-        uses: actions/upload-artifact@v4
-        with:
-          name: wtw-database
-          path: |
-            server/wtw.db
-            server/wtw.db-shm
-            server/wtw.db-wal
-          retention-days: 90
-          overwrite: true

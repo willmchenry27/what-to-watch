@@ -57,14 +57,16 @@ function buildEmailHtml(guide, allPicks) {
   const fresh = allPicks.filter((p) => p.cohort === 'fresh')
   const simmered = allPicks.filter((p) => p.cohort === 'simmered')
 
-  const freshHero = fresh[0]
-  const freshRunners = fresh.slice(1, 6)
+  const freshHeroIdx = fresh.findIndex((p) => p.backdrop_path || p.poster_path)
+  const freshHero = freshHeroIdx >= 0 ? fresh[freshHeroIdx] : fresh[0]
+  const freshRunners = fresh.filter((_, i) => i !== freshHeroIdx).slice(0, 5)
 
   const simmeredSorted = simmered
     .filter((p) => p.combined_score != null)
     .sort((a, b) => b.combined_score - a.combined_score)
-  const simmeredHero = simmeredSorted[0]
-  const simmeredRunners = simmeredSorted.slice(1, 11)
+  const simmeredHeroIdx = simmeredSorted.findIndex((p) => p.backdrop_path || p.poster_path)
+  const simmeredHero = simmeredHeroIdx >= 0 ? simmeredSorted[simmeredHeroIdx] : null
+  const simmeredRunners = simmeredSorted.filter((_, i) => i !== simmeredHeroIdx).slice(0, 10)
 
   // Fresh hero
   const freshHeroImage = freshHero ? (freshHero.backdrop_path || freshHero.poster_path || '') : ''

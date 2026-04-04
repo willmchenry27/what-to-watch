@@ -6,15 +6,15 @@ const { getDb } = require('../db/schema')
 async function main() {
   console.log('Loading latest guide from database...\n')
 
-  const db = getDb()
-  const guide = db.prepare('SELECT * FROM weekly_guides ORDER BY week_of DESC LIMIT 1').get()
+  const db = await getDb()
+  const guide = (await db.execute('SELECT * FROM weekly_guides ORDER BY week_of DESC LIMIT 1')).rows[0]
 
   if (!guide) {
     console.error('No guide found in database. Run `node server/services/generateGuide.js` first.')
     process.exit(1)
   }
 
-  const rawPicks = db.prepare('SELECT * FROM picks WHERE guide_id = ? ORDER BY rank ASC').all(guide.id)
+  const rawPicks = (await db.execute({ sql: 'SELECT * FROM picks WHERE guide_id = ? ORDER BY rank ASC', args: [guide.id] })).rows
   const picks = rawPicks.map((p) => ({
     ...p,
     genres: JSON.parse(p.genres),

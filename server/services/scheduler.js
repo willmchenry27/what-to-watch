@@ -5,16 +5,16 @@ const { generateGuide } = require('./generateGuide')
 const { sendWeeklyEmail } = require('./emailService')
 const { getDb } = require('../db/schema')
 
-function getHiddenTmdbIds() {
-  const db = getDb()
-  const rows = db.prepare("SELECT tmdb_id FROM user_actions WHERE action_type IN ('seen', 'dismiss')").all()
-  return new Set(rows.map((r) => r.tmdb_id))
+async function getHiddenTmdbIds() {
+  const db = await getDb()
+  const result = await db.execute("SELECT tmdb_id FROM user_actions WHERE action_type IN ('seen', 'dismiss')")
+  return new Set(result.rows.map((r) => r.tmdb_id))
 }
 
-function loadGuideData(guideId) {
-  const db = getDb()
-  const guide = db.prepare('SELECT * FROM weekly_guides WHERE id = ?').get(guideId)
-  const picks = db.prepare('SELECT * FROM picks WHERE guide_id = ? ORDER BY rank ASC').all(guideId)
+async function loadGuideData(guideId) {
+  const db = await getDb()
+  const guide = (await db.execute({ sql: 'SELECT * FROM weekly_guides WHERE id = ?', args: [guideId] })).rows[0]
+  const picks = (await db.execute({ sql: 'SELECT * FROM picks WHERE guide_id = ? ORDER BY rank ASC', args: [guideId] })).rows
 
   return {
     guide,
@@ -34,8 +34,8 @@ async function runPipeline() {
     const { guideId, total } = await generateGuide()
     console.log(`\nGuide generated: ${guideId} (${total} picks)`)
 
-    const { guide, picks } = loadGuideData(guideId)
-    const hiddenIds = getHiddenTmdbIds()
+    const { guide, picks } = await loadGuideData(guideId)
+    const hiddenIds = await getHiddenTmdbIds()
     const unseen = picks.filter((p) => !hiddenIds.has(p.tmdb_id))
     await sendWeeklyEmail(guide, unseen)
     console.log(`\n[${new Date().toISOString()}] Pipeline complete — guide + email sent.\n`)

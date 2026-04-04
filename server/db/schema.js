@@ -1,30 +1,30 @@
-const Database = require('better-sqlite3')
-const path = require('path')
+require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') })
 
-const DB_PATH = path.join(__dirname, '..', 'wtw.db')
+const { createClient } = require('@libsql/client')
 
-let db
+let client
 
-function getDb() {
-  if (!db) {
-    db = new Database(DB_PATH)
-    db.pragma('journal_mode = WAL')
-    db.pragma('foreign_keys = ON')
-    createTables()
-    migrate()
+async function getDb() {
+  if (!client) {
+    client = createClient({
+      url: process.env.TURSO_DATABASE_URL,
+      authToken: process.env.TURSO_AUTH_TOKEN,
+    })
+    await client.execute('PRAGMA foreign_keys = ON')
+    await createTables()
+    await migrate()
   }
-  return db
+  return client
 }
 
-function createTables() {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS weekly_guides (
+async function createTables() {
+  await client.batch([
+    `CREATE TABLE IF NOT EXISTS weekly_guides (
       id TEXT PRIMARY KEY,
       week_of TEXT NOT NULL,
       generated_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS picks (
+    )`,
+    `CREATE TABLE IF NOT EXISTS picks (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       guide_id TEXT NOT NULL,
       rank INTEGER NOT NULL,
@@ -48,55 +48,58 @@ function createTables() {
       in_theaters INTEGER NOT NULL DEFAULT 0,
       cohort TEXT NOT NULL DEFAULT 'fresh',
       FOREIGN KEY (guide_id) REFERENCES weekly_guides(id)
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_picks_guide ON picks(guide_id);
-
-    CREATE TABLE IF NOT EXISTS user_actions (
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_picks_guide ON picks(guide_id)`,
+    `CREATE TABLE IF NOT EXISTS user_actions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       tmdb_id INTEGER NOT NULL,
       action_type TEXT NOT NULL CHECK(action_type IN ('watch', 'save', 'seen', 'dismiss')),
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       UNIQUE(tmdb_id, action_type)
-    );
-  `)
+    )`,
+  ], 'write')
 }
 
-function migrate() {
-  const cols = db.prepare("PRAGMA table_info(picks)").all()
-  // Add cohort column if missing (existing databases)
+async function migrate() {
+  const result = await client.execute('PRAGMA table_info(picks)')
+  const cols = result.rows
+
+  const stmts = []
   if (!cols.find((c) => c.name === 'cohort')) {
-    db.exec("ALTER TABLE picks ADD COLUMN cohort TEXT NOT NULL DEFAULT 'fresh'")
+    stmts.push("ALTER TABLE picks ADD COLUMN cohort TEXT NOT NULL DEFAULT 'fresh'")
   }
-  // Add TMDB vote columns if missing
   if (!cols.find((c) => c.name === 'tmdb_vote_average')) {
-    db.exec("ALTER TABLE picks ADD COLUMN tmdb_vote_average REAL")
+    stmts.push('ALTER TABLE picks ADD COLUMN tmdb_vote_average REAL')
   }
   if (!cols.find((c) => c.name === 'tmdb_vote_count')) {
-    db.exec("ALTER TABLE picks ADD COLUMN tmdb_vote_count INTEGER")
+    stmts.push('ALTER TABLE picks ADD COLUMN tmdb_vote_count INTEGER')
   }
   if (!cols.find((c) => c.name === 'availability')) {
-    db.exec("ALTER TABLE picks ADD COLUMN availability TEXT")
+    stmts.push('ALTER TABLE picks ADD COLUMN availability TEXT')
   }
   if (!cols.find((c) => c.name === 'imdb_id')) {
-    db.exec("ALTER TABLE picks ADD COLUMN imdb_id TEXT")
+    stmts.push('ALTER TABLE picks ADD COLUMN imdb_id TEXT')
   }
 
   // Add 'dismiss' to user_actions CHECK constraint
-  const tableInfo = db.prepare("SELECT sql FROM sqlite_master WHERE name='user_actions'").get()
+  const tableInfo = (await client.execute("SELECT sql FROM sqlite_master WHERE name='user_actions'")).rows[0]
   if (tableInfo && !tableInfo.sql.includes('dismiss')) {
-    db.exec(`
-      CREATE TABLE user_actions_new (
+    stmts.push(
+      `CREATE TABLE user_actions_new (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         tmdb_id INTEGER NOT NULL,
         action_type TEXT NOT NULL CHECK(action_type IN ('watch', 'save', 'seen', 'dismiss')),
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         UNIQUE(tmdb_id, action_type)
-      );
-      INSERT INTO user_actions_new SELECT * FROM user_actions;
-      DROP TABLE user_actions;
-      ALTER TABLE user_actions_new RENAME TO user_actions;
-    `)
+      )`,
+      'INSERT INTO user_actions_new SELECT * FROM user_actions',
+      'DROP TABLE user_actions',
+      'ALTER TABLE user_actions_new RENAME TO user_actions'
+    )
+  }
+
+  if (stmts.length > 0) {
+    await client.batch(stmts, 'write')
   }
 }
 

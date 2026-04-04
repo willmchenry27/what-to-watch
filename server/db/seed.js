@@ -30,13 +30,13 @@ const rawPicks = [
   { tmdb_id: 10014, title: "Behind The Screams", year: 2022, type: "movie", genres: ["Documentary", "Comedy"], platform: "Hulu", platform_slug: "hulu", poster_path: `${BASE}/content/behind-the-screams/poster_1920x1080.jpg`, imdb_score: 7.0, rt_score: 78, cast: ["Mort Shambler", "Vera Decompose", "Rick Rigor"], director: "Mort Shambler", description: "Behind the scenes of zombie movie productions.", in_theaters: false },
 ]
 
-function seed() {
-  const db = getDb()
+async function seed() {
+  const db = await getDb()
 
   const guideId = 'guide-2026-02-28'
 
   // Check if already seeded
-  const existing = db.prepare('SELECT id FROM weekly_guides WHERE id = ?').get(guideId)
+  const existing = (await db.execute({ sql: 'SELECT id FROM weekly_guides WHERE id = ?', args: [guideId] })).rows[0]
   if (existing) {
     console.log('Database already seeded.')
     return
@@ -51,45 +51,27 @@ function seed() {
     .sort((a, b) => (b.combined_score ?? 0) - (a.combined_score ?? 0))
     .map((p, i) => ({ ...p, rank: i + 1 }))
 
-  const insertGuide = db.prepare(
-    'INSERT INTO weekly_guides (id, week_of, generated_at) VALUES (?, ?, ?)'
-  )
+  const pickSql = `INSERT INTO picks (guide_id, rank, tmdb_id, title, year, type, season, genres, description, imdb_score, rt_score, combined_score, platform, platform_slug, poster_path, backdrop_path, cast_list, director, in_theaters)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
-  const insertPick = db.prepare(`
-    INSERT INTO picks (guide_id, rank, tmdb_id, title, year, type, season, genres, description, imdb_score, rt_score, combined_score, platform, platform_slug, poster_path, backdrop_path, cast_list, director, in_theaters)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `)
+  const statements = [
+    { sql: 'INSERT INTO weekly_guides (id, week_of, generated_at) VALUES (?, ?, ?)', args: [guideId, '2026-02-23', '2026-02-28T10:00:00Z'] },
+    ...picks.map((p) => ({
+      sql: pickSql,
+      args: [
+        guideId, p.rank, p.tmdb_id || null, p.title, p.year || null,
+        p.type, p.season || null, JSON.stringify(p.genres || []),
+        p.description || null, p.imdb_score || null, p.rt_score || null,
+        p.combined_score, p.platform || null, p.platform_slug || null,
+        p.poster_path || null, p.backdrop_path || null,
+        JSON.stringify(p.cast || []), p.director || null,
+        p.in_theaters ? 1 : 0,
+      ],
+    })),
+  ]
 
-  const transaction = db.transaction(() => {
-    insertGuide.run(guideId, '2026-02-23', '2026-02-28T10:00:00Z')
-
-    for (const p of picks) {
-      insertPick.run(
-        guideId,
-        p.rank,
-        p.tmdb_id || null,
-        p.title,
-        p.year || null,
-        p.type,
-        p.season || null,
-        JSON.stringify(p.genres || []),
-        p.description || null,
-        p.imdb_score || null,
-        p.rt_score || null,
-        p.combined_score,
-        p.platform || null,
-        p.platform_slug || null,
-        p.poster_path || null,
-        p.backdrop_path || null,
-        JSON.stringify(p.cast || []),
-        p.director || null,
-        p.in_theaters ? 1 : 0
-      )
-    }
-  })
-
-  transaction()
+  await db.batch(statements, 'write')
   console.log(`Seeded ${picks.length} picks for guide ${guideId}`)
 }
 
-seed()
+seed().catch((err) => { console.error(err); process.exit(1) })

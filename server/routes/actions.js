@@ -6,7 +6,7 @@ const router = express.Router()
 const VALID_ACTIONS = ['watch', 'save', 'seen', 'dismiss']
 
 // POST /api/actions — toggle a user action
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   const { tmdb_id, action_type } = req.body
 
   if (!tmdb_id || !action_type) {
@@ -16,30 +16,32 @@ router.post('/', (req, res) => {
     return res.status(400).json({ error: `action_type must be one of: ${VALID_ACTIONS.join(', ')}` })
   }
 
-  const db = getDb()
-  const existing = db.prepare(
-    'SELECT id FROM user_actions WHERE tmdb_id = ? AND action_type = ?'
-  ).get(tmdb_id, action_type)
+  const db = await getDb()
+  const existing = (await db.execute({
+    sql: 'SELECT id FROM user_actions WHERE tmdb_id = ? AND action_type = ?',
+    args: [tmdb_id, action_type],
+  })).rows[0]
 
   if (existing) {
-    db.prepare('DELETE FROM user_actions WHERE id = ?').run(existing.id)
+    await db.execute({ sql: 'DELETE FROM user_actions WHERE id = ?', args: [existing.id] })
     return res.json({ tmdb_id, action_type, active: false })
   }
 
-  db.prepare(
-    'INSERT INTO user_actions (tmdb_id, action_type) VALUES (?, ?)'
-  ).run(tmdb_id, action_type)
+  await db.execute({
+    sql: 'INSERT INTO user_actions (tmdb_id, action_type) VALUES (?, ?)',
+    args: [tmdb_id, action_type],
+  })
 
   res.json({ tmdb_id, action_type, active: true })
 })
 
 // GET /api/actions — all active actions (for hydrating frontend state)
-router.get('/', (req, res) => {
-  const db = getDb()
-  const rows = db.prepare('SELECT tmdb_id, action_type FROM user_actions').all()
+router.get('/', async (req, res) => {
+  const db = await getDb()
+  const result = await db.execute('SELECT tmdb_id, action_type FROM user_actions')
 
   const actions = {}
-  for (const { tmdb_id, action_type } of rows) {
+  for (const { tmdb_id, action_type } of result.rows) {
     const key = String(tmdb_id)
     if (!actions[key]) actions[key] = {}
     actions[key][action_type] = true
@@ -59,22 +61,31 @@ ${undoUrl ? `<a href="${undoUrl}" style="display:inline-block;margin-top:16px;pa
 }
 
 // GET /api/actions/:action_type/:tmdb_id — email link click (records action, returns HTML)
-router.get('/:action_type/:tmdb_id', (req, res) => {
+router.get('/:action_type/:tmdb_id', async (req, res) => {
   const { action_type, tmdb_id } = req.params
   if (!['seen', 'dismiss'].includes(action_type)) {
     return res.status(400).send('Invalid action')
   }
 
-  const db = getDb()
+  const db = await getDb()
   const id = parseInt(tmdb_id, 10)
   if (isNaN(id)) return res.status(400).send('Invalid tmdb_id')
 
-  const pick = db.prepare('SELECT title FROM picks WHERE tmdb_id = ? ORDER BY id DESC LIMIT 1').get(id)
+  const pick = (await db.execute({
+    sql: 'SELECT title FROM picks WHERE tmdb_id = ? ORDER BY id DESC LIMIT 1',
+    args: [id],
+  })).rows[0]
   const displayTitle = pick ? pick.title : `Title #${tmdb_id}`
 
-  const existing = db.prepare('SELECT id FROM user_actions WHERE tmdb_id = ? AND action_type = ?').get(id, action_type)
+  const existing = (await db.execute({
+    sql: 'SELECT id FROM user_actions WHERE tmdb_id = ? AND action_type = ?',
+    args: [id, action_type],
+  })).rows[0]
   if (!existing) {
-    db.prepare('INSERT INTO user_actions (tmdb_id, action_type) VALUES (?, ?)').run(id, action_type)
+    await db.execute({
+      sql: 'INSERT INTO user_actions (tmdb_id, action_type) VALUES (?, ?)',
+      args: [id, action_type],
+    })
   }
 
   const label = action_type === 'seen' ? 'Marked as seen' : 'Dismissed'
@@ -89,20 +100,26 @@ router.get('/:action_type/:tmdb_id', (req, res) => {
 })
 
 // GET /api/actions/undo/:action_type/:tmdb_id — undo a dismiss/seen action
-router.get('/undo/:action_type/:tmdb_id', (req, res) => {
+router.get('/undo/:action_type/:tmdb_id', async (req, res) => {
   const { action_type, tmdb_id } = req.params
   if (!['seen', 'dismiss'].includes(action_type)) {
     return res.status(400).send('Invalid action')
   }
 
-  const db = getDb()
+  const db = await getDb()
   const id = parseInt(tmdb_id, 10)
   if (isNaN(id)) return res.status(400).send('Invalid tmdb_id')
 
-  const pick = db.prepare('SELECT title FROM picks WHERE tmdb_id = ? ORDER BY id DESC LIMIT 1').get(id)
+  const pick = (await db.execute({
+    sql: 'SELECT title FROM picks WHERE tmdb_id = ? ORDER BY id DESC LIMIT 1',
+    args: [id],
+  })).rows[0]
   const displayTitle = pick ? pick.title : `Title #${tmdb_id}`
 
-  db.prepare('DELETE FROM user_actions WHERE tmdb_id = ? AND action_type = ?').run(id, action_type)
+  await db.execute({
+    sql: 'DELETE FROM user_actions WHERE tmdb_id = ? AND action_type = ?',
+    args: [id, action_type],
+  })
 
   res.send(confirmationHtml(
     `Restored: ${displayTitle}`,

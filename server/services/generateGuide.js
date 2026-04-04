@@ -46,15 +46,17 @@ function getSimmeredGuideIds() {
   return ids
 }
 
-function loadSimmeredCandidates() {
-  const db = getDb()
+async function loadSimmeredCandidates() {
+  const db = await getDb()
   const guideIds = getSimmeredGuideIds()
 
   const allRows = []
   for (const guideId of guideIds) {
-    const rows = db.prepare(
-      "SELECT * FROM picks WHERE guide_id = ? AND cohort = 'fresh' ORDER BY rank ASC"
-    ).all(guideId)
+    const result = await db.execute({
+      sql: "SELECT * FROM picks WHERE guide_id = ? AND cohort = 'fresh' ORDER BY rank ASC",
+      args: [guideId],
+    })
+    const rows = result.rows
     if (rows.length > 0) {
       console.log(`  Found ${rows.length} fresh picks from ${guideId}`)
       allRows.push(...rows.map((r) => ({ ...r, _guideId: guideId })))
@@ -100,51 +102,34 @@ function loadSimmeredCandidates() {
   }))
 }
 
-function saveToDatabase(weekOf, freshPicks, simmeredPicks) {
-  const db = getDb()
+async function saveToDatabase(weekOf, freshPicks, simmeredPicks) {
+  const db = await getDb()
   const guideId = `guide-${weekOf}`
 
-  const insertGuide = db.prepare(
-    'INSERT OR REPLACE INTO weekly_guides (id, week_of, generated_at) VALUES (?, ?, ?)'
-  )
-  const deletePicks = db.prepare('DELETE FROM picks WHERE guide_id = ?')
-  const insertPick = db.prepare(`
-    INSERT INTO picks (guide_id, rank, tmdb_id, imdb_id, title, year, type, season, genres, description, imdb_score, rt_score, combined_score, platform, platform_slug, availability, poster_path, backdrop_path, cast_list, director, in_theaters, cohort, tmdb_vote_average, tmdb_vote_count)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `)
+  const pickSql = `INSERT INTO picks (guide_id, rank, tmdb_id, imdb_id, title, year, type, season, genres, description, imdb_score, rt_score, combined_score, platform, platform_slug, availability, poster_path, backdrop_path, cast_list, director, in_theaters, cohort, tmdb_vote_average, tmdb_vote_count)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
-  const transaction = db.transaction(() => {
-    insertGuide.run(guideId, weekOf, new Date().toISOString())
-    deletePicks.run(guideId)
+  function pickArgs(p, cohort) {
+    return [
+      guideId, p.rank, p.tmdb_id || null, p.imdb_id || null, p.title, p.year || null,
+      p.type, p.season || null, JSON.stringify(p.genres || []),
+      p.description || null, p.imdb_score ?? null, p.rt_score ?? null,
+      p.combined_score ?? null, p.platform || null, p.platform_slug || null,
+      p.availability || null, p.poster_path || null, p.backdrop_path || null,
+      JSON.stringify(p.cast || []), p.director || null,
+      p.in_theaters ? 1 : 0, cohort,
+      p.tmdb_vote_average ?? null, p.tmdb_vote_count ?? null,
+    ]
+  }
 
-    for (const p of freshPicks) {
-      insertPick.run(
-        guideId, p.rank, p.tmdb_id || null, p.imdb_id || null, p.title, p.year || null,
-        p.type, p.season || null, JSON.stringify(p.genres || []),
-        p.description || null, p.imdb_score ?? null, p.rt_score ?? null,
-        p.combined_score ?? null, p.platform || null, p.platform_slug || null,
-        p.availability || null, p.poster_path || null, p.backdrop_path || null,
-        JSON.stringify(p.cast || []), p.director || null,
-        p.in_theaters ? 1 : 0, 'fresh',
-        p.tmdb_vote_average ?? null, p.tmdb_vote_count ?? null
-      )
-    }
+  const statements = [
+    { sql: 'INSERT OR REPLACE INTO weekly_guides (id, week_of, generated_at) VALUES (?, ?, ?)', args: [guideId, weekOf, new Date().toISOString()] },
+    { sql: 'DELETE FROM picks WHERE guide_id = ?', args: [guideId] },
+    ...freshPicks.map((p) => ({ sql: pickSql, args: pickArgs(p, 'fresh') })),
+    ...simmeredPicks.map((p) => ({ sql: pickSql, args: pickArgs(p, 'simmered') })),
+  ]
 
-    for (const p of simmeredPicks) {
-      insertPick.run(
-        guideId, p.rank, p.tmdb_id || null, p.imdb_id || null, p.title, p.year || null,
-        p.type, p.season || null, JSON.stringify(p.genres || []),
-        p.description || null, p.imdb_score ?? null, p.rt_score ?? null,
-        p.combined_score ?? null, p.platform || null, p.platform_slug || null,
-        p.availability || null, p.poster_path || null, p.backdrop_path || null,
-        JSON.stringify(p.cast || []), p.director || null,
-        p.in_theaters ? 1 : 0, 'simmered',
-        p.tmdb_vote_average ?? null, p.tmdb_vote_count ?? null
-      )
-    }
-  })
-
-  transaction()
+  await db.batch(statements, 'write')
   return guideId
 }
 
@@ -184,7 +169,7 @@ async function generateGuide() {
 
   // ── SIMMERED PICKS: Last 2 weeks' releases, now scored ──
   console.log('\nStep 2: Loading picks from past 2 weeks for SIMMERED scoring...')
-  const prevPicks = loadSimmeredCandidates()
+  const prevPicks = await loadSimmeredCandidates()
 
   let simmeredPicks = []
   if (prevPicks.length > 0) {
@@ -287,7 +272,7 @@ async function generateGuide() {
 
   // ── SAVE ──
   console.log('\nStep 4: Saving to database...')
-  const guideId = saveToDatabase(week_of, freshPicks, simmeredPicks)
+  const guideId = await saveToDatabase(week_of, freshPicks, simmeredPicks)
   const total = freshPicks.length + simmeredPicks.length
   console.log(`Saved ${total} picks (${freshPicks.length} fresh + ${simmeredPicks.length} simmered) as ${guideId}`)
 

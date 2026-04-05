@@ -31,5 +31,6 @@ jobs:
           NOTIFICATION_EMAIL: ${{ secrets.NOTIFICATION_EMAIL }}
           TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
           TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+          APP_URL: ${{ secrets.APP_URL }}
         working-directory: server
         run: node scripts/run-pipeline.js

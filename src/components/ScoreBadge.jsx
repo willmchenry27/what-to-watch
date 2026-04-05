@@ -17,7 +17,6 @@ export default function ScoreBadge({ imdbScore, rtScore, combinedScore, size = '
   if (combinedScore == null && imdbScore == null && rtScore == null) return null
 
   const isLarge = size === 'lg'
-  const isMissing = combinedScore == null
 
   return (
     <div className="flex items-center gap-3">

@@ -1,24 +1,28 @@
-import { useState, useEffect } from 'react'
-import { mockPicks, weeklyGuide } from '../data/mockPicks'
-
-const API_BASE = 'http://localhost:3001'
+import { useState, useEffect, useCallback } from 'react'
+import { apiFetch, API_MISCONFIGURED } from '../lib/api'
 
 export function useGuide(guideId = null) {
   const [guide, setGuide] = useState(null)
-  const [picks, setPicks] = useState(mockPicks)
+  const [picks, setPicks] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [reloadCounter, setReloadCounter] = useState(0)
 
   useEffect(() => {
     let cancelled = false
     setLoading(true)
 
     async function fetchGuide() {
+      if (API_MISCONFIGURED) {
+        if (!cancelled) {
+          setError('VITE_API_BASE_URL is not configured')
+          setLoading(false)
+        }
+        return
+      }
       try {
-        const endpoint = guideId
-          ? `${API_BASE}/api/guide/${guideId}`
-          : `${API_BASE}/api/guide/current`
-        const res = await fetch(endpoint)
+        const path = guideId ? `/api/guide/${guideId}` : '/api/guide/current'
+        const res = await apiFetch(path)
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         const data = await res.json()
 
@@ -28,11 +32,10 @@ export function useGuide(guideId = null) {
           setError(null)
         }
       } catch (err) {
-        console.warn('API unavailable, using mock data:', err.message)
         if (!cancelled) {
-          setGuide(weeklyGuide)
-          setPicks(mockPicks)
-          setError(null)
+          setError(err.message)
+          setPicks([])
+          setGuide(null)
         }
       } finally {
         if (!cancelled) setLoading(false)
@@ -41,7 +44,9 @@ export function useGuide(guideId = null) {
 
     fetchGuide()
     return () => { cancelled = true }
-  }, [guideId])
+  }, [guideId, reloadCounter])
 
-  return { guide, picks, loading, error }
+  const refetch = useCallback(() => setReloadCounter((n) => n + 1), [])
+
+  return { guide, picks, loading, error, refetch }
 }

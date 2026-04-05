@@ -38,7 +38,7 @@ function getSimmeredGuideIds() {
   const dw = getDateWindow()
   const fmt = (d) => d.toISOString().split('T')[0]
   const ids = []
-  for (let w = 1; w <= 4; w++) {
+  for (let w = 1; w <= 2; w++) {
     const sat = new Date(dw.gte + 'T00:00:00')
     sat.setDate(sat.getDate() - (w * 7))
     ids.push(`guide-${fmt(sat)}`)
@@ -198,7 +198,7 @@ async function generateGuide() {
               p.tmdb_vote_average = data.vote_average ?? p.tmdb_vote_average
               p.tmdb_vote_count = data.vote_count ?? p.tmdb_vote_count
             }
-          } catch {}
+          } catch { /* tolerate transient TMDB refresh failures */ }
           // Fetch IMDb ID if missing
           if (!p.imdb_id) {
             const extIds = await fetchExternalIds(p.tmdb_id, p.type)
@@ -228,7 +228,7 @@ async function generateGuide() {
               pick.rt_score = r.rt_score
             }
           }
-        } catch {}
+        } catch { /* tolerate transient OMDb rescore failures */ }
       }
     }
 
@@ -290,7 +290,7 @@ module.exports = { generateGuide, rankPicks, calculateCombinedScore }
 // Run standalone
 if (require.main === module) {
   generateGuide()
-    .then(({ guideId, total }) => {
+    .then(({ total }) => {
       console.log(`\nDone. ${total} picks saved. Serve via /api/guide/current`)
     })
     .catch((err) => {

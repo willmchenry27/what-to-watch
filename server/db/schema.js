@@ -50,13 +50,15 @@ async function createTables() {
       FOREIGN KEY (guide_id) REFERENCES weekly_guides(id)
     )`,
     `CREATE INDEX IF NOT EXISTS idx_picks_guide ON picks(guide_id)`,
-    `CREATE TABLE IF NOT EXISTS user_actions (
+    `CREATE TABLE IF NOT EXISTS recipient_actions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      recipient_email TEXT NOT NULL,
       tmdb_id INTEGER NOT NULL,
       action_type TEXT NOT NULL CHECK(action_type IN ('watch', 'save', 'seen', 'dismiss')),
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      UNIQUE(tmdb_id, action_type)
+      UNIQUE(recipient_email, tmdb_id, action_type)
     )`,
+    `CREATE INDEX IF NOT EXISTS idx_recipient_actions_email ON recipient_actions(recipient_email)`,
   ], 'write')
 }
 
@@ -81,21 +83,11 @@ async function migrate() {
     stmts.push('ALTER TABLE picks ADD COLUMN imdb_id TEXT')
   }
 
-  // Add 'dismiss' to user_actions CHECK constraint
-  const tableInfo = (await client.execute("SELECT sql FROM sqlite_master WHERE name='user_actions'")).rows[0]
-  if (tableInfo && !tableInfo.sql.includes('dismiss')) {
-    stmts.push(
-      `CREATE TABLE user_actions_new (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        tmdb_id INTEGER NOT NULL,
-        action_type TEXT NOT NULL CHECK(action_type IN ('watch', 'save', 'seen', 'dismiss')),
-        created_at TEXT NOT NULL DEFAULT (datetime('now')),
-        UNIQUE(tmdb_id, action_type)
-      )`,
-      'INSERT INTO user_actions_new SELECT * FROM user_actions',
-      'DROP TABLE user_actions',
-      'ALTER TABLE user_actions_new RENAME TO user_actions'
-    )
+  // Drop legacy user_actions table if it exists — data is unscoped and cannot be
+  // safely mapped to recipients
+  const legacy = (await client.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='user_actions'")).rows[0]
+  if (legacy) {
+    stmts.push('DROP TABLE user_actions')
   }
 
   if (stmts.length > 0) {

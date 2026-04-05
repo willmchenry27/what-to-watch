@@ -1,8 +1,35 @@
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') })
 
 const { Resend } = require('resend')
+const { signRecipientToken, normalizeEmail } = require('../lib/recipientToken')
 
-const resend = new Resend(process.env.RESEND_API_KEY)
+function parseRecipients(raw) {
+  if (!raw) return []
+  const seen = new Set()
+  const list = []
+  for (const part of String(raw).split(',')) {
+    const email = normalizeEmail(part)
+    if (email && email.includes('@') && !seen.has(email)) {
+      seen.add(email)
+      list.push(email)
+    }
+  }
+  return list
+}
+
+function validateEmailEnv() {
+  const missing = []
+  if (!process.env.APP_URL) missing.push('APP_URL')
+  if (!process.env.API_PUBLIC_URL) missing.push('API_PUBLIC_URL')
+  if (!process.env.ACTION_LINK_SECRET) missing.push('ACTION_LINK_SECRET')
+  if (!process.env.NOTIFICATION_EMAIL) missing.push('NOTIFICATION_EMAIL')
+  if (!process.env.RESEND_API_KEY || process.env.RESEND_API_KEY === 'YOUR_RESEND_API_KEY_HERE') {
+    missing.push('RESEND_API_KEY')
+  }
+  if (missing.length > 0) {
+    throw new Error(`Missing or invalid required env vars: ${missing.join(', ')}`)
+  }
+}
 
 function scoreColor(value) {
   if (value >= 80) return '#34d399'
@@ -16,13 +43,14 @@ function tmdbUrl(pick) {
   return `https://www.themoviedb.org/${mediaType}/${pick.tmdb_id}`
 }
 
-function actionLinks(pick) {
-  const appUrl = process.env.APP_URL || 'http://localhost:3001'
+function actionLinks(pick, token) {
+  const apiBase = process.env.API_PUBLIC_URL || process.env.APP_URL || 'http://localhost:3001'
+  const t = encodeURIComponent(token)
   const linkStyle = 'color:#555;font-size:10px;text-decoration:none;'
-  return `<div style="margin-top:6px;"><a href="${appUrl}/api/actions/seen/${pick.tmdb_id}" style="${linkStyle}">Seen it</a> &nbsp;&middot;&nbsp; <a href="${appUrl}/api/actions/dismiss/${pick.tmdb_id}" style="${linkStyle}">Not for me</a></div>`
+  return `<div style="margin-top:6px;"><a href="${apiBase}/api/actions/seen/${pick.tmdb_id}?r=${t}" style="${linkStyle}">Seen it</a> &nbsp;&middot;&nbsp; <a href="${apiBase}/api/actions/dismiss/${pick.tmdb_id}?r=${t}" style="${linkStyle}">Not for me</a></div>`
 }
 
-function buildPickRow(pick, rank, showScore) {
+function buildPickRow(pick, rank, showScore, token) {
   const scoreHtml = showScore && pick.combined_score != null
     ? `<span style="color:${scoreColor(pick.combined_score)};font-weight:800;font-size:20px;">${pick.combined_score}</span>`
     : '<span style="color:#444;font-size:14px;">—</span>'
@@ -44,7 +72,7 @@ function buildPickRow(pick, rank, showScore) {
               <div style="font-size:16px;font-weight:700;color:#f5f0e8;margin-bottom:4px;">${tmdbUrl(pick) ? `<a href="${tmdbUrl(pick)}" style="color:#f5f0e8;text-decoration:none;">${pick.title}</a>` : pick.title}</div>
               <div style="font-size:12px;color:#888;margin-bottom:${scores ? '6' : '0'}px;">${(pick.genres || []).slice(0, 3).join(', ')} ${platform ? '&nbsp;&middot;&nbsp;' + platform : ''}</div>
               ${scores ? `<div style="font-size:12px;color:#999;">${scores}</div>` : ''}
-              ${showScore ? actionLinks(pick) : ''}
+              ${showScore ? actionLinks(pick, token) : ''}
             </td>
             ${showScore ? `<td width="60" style="vertical-align:middle;text-align:right;">${scoreHtml}</td>` : ''}
           </tr>
@@ -53,7 +81,7 @@ function buildPickRow(pick, rank, showScore) {
     </tr>`
 }
 
-function buildEmailHtml(guide, allPicks) {
+function buildEmailHtml(guide, allPicks, token) {
   const fresh = allPicks.filter((p) => p.cohort === 'fresh')
   const simmered = allPicks.filter((p) => p.cohort === 'simmered')
 
@@ -87,7 +115,7 @@ function buildEmailHtml(guide, allPicks) {
       </td>
     </tr>` : ''
 
-  const freshRows = freshRunners.map((p, i) => buildPickRow(p, i + 2, false)).join('')
+  const freshRows = freshRunners.map((p, i) => buildPickRow(p, i + 2, false, token)).join('')
 
   // Simmered hero
   const simHeroImage = simmeredHero ? (simmeredHero.backdrop_path || simmeredHero.poster_path || '') : ''
@@ -110,14 +138,18 @@ function buildEmailHtml(guide, allPicks) {
               <p style="margin:0 0 10px;font-size:13px;color:#888;">${(simmeredHero.genres || []).join(', ')}${simmeredHero.platform ? ' &middot; ' + simmeredHero.platform : ''}</p>
               <div style="margin:0 0 12px;">${simScoreHtml}${simImdb}${simRt}${simTmdb}</div>
               ${simmeredHero.description ? `<p style="margin:0 0 10px;font-size:13px;line-height:1.5;color:#aaa;">${simmeredHero.description.slice(0, 200)}${simmeredHero.description.length > 200 ? '...' : ''}</p>` : ''}
-              ${actionLinks(simmeredHero)}
+              ${actionLinks(simmeredHero, token)}
             </td>
           </tr>
         </table>
       </td>
     </tr>` : ''
 
-  const simRows = simmeredRunners.map((p, i) => buildPickRow(p, i + 2, true)).join('')
+  const simRows = simmeredRunners.map((p, i) => buildPickRow(p, i + 2, true, token)).join('')
+
+  // Open app CTA (bootstraps web session with token)
+  const appUrl = process.env.APP_URL || 'http://localhost:3001'
+  const openAppHref = `${appUrl}/?r=${encodeURIComponent(token)}`
 
   // Simmered section (only if we have scored content)
   const simmeredSection = simmeredSorted.length > 0 ? `
@@ -171,6 +203,13 @@ function buildEmailHtml(guide, allPicks) {
 
           ${freshRows ? `<tr><td><table width="100%" cellpadding="0" cellspacing="0" role="presentation">${freshRows}</table></td></tr>` : ''}
 
+          <!-- Open app CTA -->
+          <tr>
+            <td style="padding:24px 0 0;text-align:center;">
+              <a href="${openAppHref}" style="display:inline-block;padding:10px 20px;background:#c9a84c;color:#0a0a0c;border-radius:6px;text-decoration:none;font-size:13px;font-weight:700;">Open What to Watch</a>
+            </td>
+          </tr>
+
           <!-- Footer -->
           <tr>
             <td style="padding:32px 0 0;text-align:center;">
@@ -189,28 +228,30 @@ function buildEmailHtml(guide, allPicks) {
 </html>`
 }
 
-async function sendWeeklyEmail(guide, allPicks) {
-  const to = process.env.NOTIFICATION_EMAIL.split(',').map(e => e.trim())
-  if (!to) throw new Error('Missing NOTIFICATION_EMAIL in .env')
-  if (!process.env.RESEND_API_KEY || process.env.RESEND_API_KEY === 'YOUR_RESEND_API_KEY_HERE') {
-    throw new Error('Missing or placeholder RESEND_API_KEY in .env')
+async function sendWeeklyEmailToRecipient(guide, allPicks, recipientEmail) {
+  validateEmailEnv()
+  const recipient = normalizeEmail(recipientEmail)
+  if (!recipient || !recipient.includes('@')) {
+    throw new Error(`Invalid recipient email: ${recipientEmail}`)
   }
 
-  const html = buildEmailHtml(guide, allPicks)
+  const token = signRecipientToken(recipient)
+  const html = buildEmailHtml(guide, allPicks, token)
   const fresh = allPicks.filter((p) => p.cohort === 'fresh')
   const heroTitle = fresh[0]?.title || allPicks[0]?.title || 'This Week'
 
+  const resend = new Resend(process.env.RESEND_API_KEY)
   const { data, error } = await resend.emails.send({
     from: 'onboarding@resend.dev',
-    to,
+    to: recipient,
     subject: `What to Watch This Friday — ${heroTitle}`,
     html,
   })
 
   if (error) throw new Error(`Resend error: ${JSON.stringify(error)}`)
 
-  console.log(`Email sent to ${to} (id: ${data.id})`)
+  console.log(`Email sent to ${recipient} (id: ${data.id})`)
   return data
 }
 
-module.exports = { sendWeeklyEmail, buildEmailHtml }
+module.exports = { sendWeeklyEmailToRecipient, buildEmailHtml, parseRecipients, validateEmailEnv }

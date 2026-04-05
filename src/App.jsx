@@ -23,7 +23,7 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('')
   const [showAllFresh, setShowAllFresh] = useState(false)
 
-  const { guide, picks: allPicks, loading } = useGuide()
+  const { guide, picks: allPicks, loading, error, refetch } = useGuide()
 
   const freshPicks = useMemo(() => allPicks.filter((p) => p.cohort === 'fresh'), [allPicks])
   const simmeredPicks = useMemo(() => allPicks.filter((p) => p.cohort === 'simmered'), [allPicks])
@@ -83,6 +83,46 @@ function App() {
                 </div>
               </section>
             </>
+
+          ) : error ? (
+            /* ═══ ERROR STATE — config missing or API unreachable ═══ */
+            <div className="flex flex-col items-center justify-center py-20 px-4 text-center">
+              <div className="w-16 h-16 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center mb-5">
+                <svg className="w-8 h-8 text-red-400/70" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+                </svg>
+              </div>
+              {error.startsWith('VITE_API_BASE_URL') ? (
+                <>
+                  <h2 className="font-display text-xl font-semibold text-cream-100 mb-2">
+                    Configuration error
+                  </h2>
+                  <p className="text-cream-300/60 text-sm max-w-md mb-1">
+                    The frontend can't reach the API.
+                  </p>
+                  <p className="text-cream-300/40 text-xs max-w-md">
+                    <code className="bg-white/5 px-1.5 py-0.5 rounded">VITE_API_BASE_URL</code> is not set in this deployment.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <h2 className="font-display text-xl font-semibold text-cream-100 mb-2">
+                    Can't reach the guide
+                  </h2>
+                  <p className="text-cream-300/60 text-sm max-w-md mb-1">
+                    Something went wrong loading this week's picks.
+                  </p>
+                  <p className="text-cream-300/40 text-xs max-w-md font-mono">{error}</p>
+                  <button
+                    type="button"
+                    onClick={refetch}
+                    className="mt-5 px-4 py-2 text-xs rounded-md bg-gold-400 text-dark-950 font-semibold hover:bg-gold-500 cursor-pointer transition-colors"
+                  >
+                    Retry
+                  </button>
+                </>
+              )}
+            </div>
 
           ) : isLastWeek ? (
             /* ═══ LAST WEEK'S TOP RATED TAB ═══ */

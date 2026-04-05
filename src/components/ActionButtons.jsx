@@ -43,32 +43,38 @@ const actions = [
 ]
 
 export default function ActionButtons({ tmdbId, size = 'sm' }) {
-  const { toggleAction, getActions } = useUserActions()
+  const { toggleAction, getActions, hasToken } = useUserActions()
   const current = getActions(tmdbId)
 
   const isLg = size === 'lg'
+  const disabled = !hasToken
 
   return (
     <div className="flex items-center gap-1.5">
       {actions.map(({ key, label, activeClass, icon, iconFilled }) => {
-        const active = !!current[key]
+        const active = !disabled && !!current[key]
         return (
           <button
             key={key}
             type="button"
-            aria-label={`${active ? 'Remove from' : 'Add to'} ${label}`}
+            disabled={disabled}
+            aria-label={disabled ? 'Open from your email to sync state' : `${active ? 'Remove from' : 'Add to'} ${label}`}
             aria-pressed={active}
+            title={disabled ? 'Open this site from your weekly email to enable actions' : undefined}
             onClick={(e) => {
               e.stopPropagation()
+              if (disabled) return
               toggleAction(tmdbId, key)
             }}
             className={`
               ${isLg ? 'w-9 h-9' : 'w-7 h-7'}
               flex items-center justify-center rounded-full
-              border transition-all duration-200 cursor-pointer
-              ${active
-                ? activeClass
-                : 'text-cream-300/30 border-transparent hover:text-cream-300/60 hover:bg-white/5 hover:border-white/10'
+              border transition-all duration-200
+              ${disabled
+                ? 'text-cream-300/15 border-transparent cursor-not-allowed opacity-50'
+                : active
+                  ? `cursor-pointer ${activeClass}`
+                  : 'cursor-pointer text-cream-300/30 border-transparent hover:text-cream-300/60 hover:bg-white/5 hover:border-white/10'
               }
             `}
           >

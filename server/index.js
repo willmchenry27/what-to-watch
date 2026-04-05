@@ -4,8 +4,6 @@ const guideRoutes = require('./routes/guide')
 const actionsRoutes = require('./routes/actions')
 const { startScheduler } = require('./services/scheduler')
 
-const PORT = process.env.PORT || 3001
-
 const app = express()
 
 app.use(cors({

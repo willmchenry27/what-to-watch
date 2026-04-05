@@ -2,12 +2,15 @@ require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') }
 
 const cron = require('node-cron')
 const { generateGuide } = require('./generateGuide')
-const { sendWeeklyEmail } = require('./emailService')
+const { sendWeeklyEmailToRecipient, parseRecipients, validateEmailEnv } = require('./emailService')
 const { getDb } = require('../db/schema')
 
-async function getHiddenTmdbIds() {
+async function getHiddenTmdbIdsForRecipient(recipientEmail) {
   const db = await getDb()
-  const result = await db.execute("SELECT tmdb_id FROM user_actions WHERE action_type IN ('seen', 'dismiss')")
+  const result = await db.execute({
+    sql: "SELECT tmdb_id FROM recipient_actions WHERE recipient_email = ? AND action_type IN ('seen', 'dismiss')",
+    args: [recipientEmail],
+  })
   return new Set(result.rows.map((r) => r.tmdb_id))
 }
 
@@ -31,14 +34,26 @@ async function runPipeline() {
   console.log(`\n[${new Date().toISOString()}] Friday pipeline started.\n`)
 
   try {
+    // Validate env BEFORE running the expensive pipeline — fail early
+    validateEmailEnv()
+    const recipients = parseRecipients(process.env.NOTIFICATION_EMAIL)
+    if (recipients.length === 0) {
+      throw new Error('NOTIFICATION_EMAIL must contain at least one valid recipient')
+    }
+
     const { guideId, total } = await generateGuide()
     console.log(`\nGuide generated: ${guideId} (${total} picks)`)
 
     const { guide, picks } = await loadGuideData(guideId)
-    const hiddenIds = await getHiddenTmdbIds()
-    const unseen = picks.filter((p) => !hiddenIds.has(p.tmdb_id))
-    await sendWeeklyEmail(guide, unseen)
-    console.log(`\n[${new Date().toISOString()}] Pipeline complete — guide + email sent.\n`)
+
+    console.log(`\nSending to ${recipients.length} recipient(s): ${recipients.join(', ')}`)
+    for (const recipient of recipients) {
+      const hiddenIds = await getHiddenTmdbIdsForRecipient(recipient)
+      const unseen = picks.filter((p) => !hiddenIds.has(p.tmdb_id))
+      await sendWeeklyEmailToRecipient(guide, unseen, recipient)
+    }
+
+    console.log(`\n[${new Date().toISOString()}] Pipeline complete — guide + ${recipients.length} email(s) sent.\n`)
   } catch (err) {
     console.error(`[${new Date().toISOString()}] Pipeline failed:`, err)
     throw err
@@ -57,4 +72,4 @@ function startScheduler() {
   console.log('Scheduler started — runs every Friday at 2:00 PM ET')
 }
 
-module.exports = { startScheduler, runPipeline }
+module.exports = { startScheduler, runPipeline, loadGuideData, getHiddenTmdbIdsForRecipient }

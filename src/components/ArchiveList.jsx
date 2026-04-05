@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
-
-const API_BASE = 'http://localhost:3001'
+import { apiFetch } from '../lib/api'
 
 function formatWeekLabel(weekOf) {
   const d = new Date(weekOf + 'T00:00:00')
@@ -15,7 +14,7 @@ export default function ArchiveList({ onSelectGuide, currentGuideId }) {
     let cancelled = false
     async function fetchGuides() {
       try {
-        const res = await fetch(`${API_BASE}/api/guide/list`)
+        const res = await apiFetch('/api/guide/list')
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         const data = await res.json()
         if (!cancelled) setGuides(data)

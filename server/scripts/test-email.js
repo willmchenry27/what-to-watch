@@ -1,10 +1,18 @@
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') })
 
-const { sendWeeklyEmail, buildEmailHtml } = require('../services/emailService')
+const { sendWeeklyEmailToRecipient, parseRecipients, validateEmailEnv } = require('../services/emailService')
 const { getDb } = require('../db/schema')
+const { getHiddenTmdbIdsForRecipient } = require('../services/scheduler')
 
 async function main() {
   console.log('Loading latest guide from database...\n')
+
+  validateEmailEnv()
+  const recipients = parseRecipients(process.env.NOTIFICATION_EMAIL)
+  if (recipients.length === 0) {
+    console.error('NOTIFICATION_EMAIL must contain at least one valid email.')
+    process.exit(1)
+  }
 
   const db = await getDb()
   const guide = (await db.execute('SELECT * FROM weekly_guides ORDER BY week_of DESC LIMIT 1')).rows[0]
@@ -24,16 +32,17 @@ async function main() {
 
   console.log(`Guide: ${guide.id} (${picks.length} picks)`)
   console.log(`#1: ${picks[0]?.title || 'N/A'}\n`)
-  console.log(`Sending test email to ${process.env.NOTIFICATION_EMAIL}...\n`)
+  console.log(`Sending to ${recipients.length} recipient(s): ${recipients.join(', ')}\n`)
 
-  try {
-    const result = await sendWeeklyEmail(guide, picks)
-    console.log('Email sent successfully!')
-    console.log(`Message ID: ${result.id}`)
-    console.log(`\nCheck your inbox at ${process.env.NOTIFICATION_EMAIL}`)
-  } catch (err) {
-    console.error('Failed to send email:', err.message)
-    process.exit(1)
+  for (const recipient of recipients) {
+    const hidden = await getHiddenTmdbIdsForRecipient(recipient)
+    const unseen = picks.filter((p) => !hidden.has(p.tmdb_id))
+    try {
+      const result = await sendWeeklyEmailToRecipient(guide, unseen, recipient)
+      console.log(`✓ ${recipient} (id: ${result.id})`)
+    } catch (err) {
+      console.error(`✗ ${recipient}: ${err.message}`)
+    }
   }
 }
 

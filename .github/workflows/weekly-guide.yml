@@ -32,5 +32,7 @@ jobs:
           TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
           TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
           APP_URL: ${{ secrets.APP_URL }}
+          ACTION_LINK_SECRET: ${{ secrets.ACTION_LINK_SECRET }}
+          API_PUBLIC_URL: ${{ secrets.API_PUBLIC_URL }}
         working-directory: server
         run: node scripts/run-pipeline.js

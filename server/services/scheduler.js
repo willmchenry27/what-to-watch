@@ -30,19 +30,28 @@ async function loadGuideData(guideId) {
   }
 }
 
-async function runPipeline() {
-  console.log(`\n[${new Date().toISOString()}] Friday pipeline started.\n`)
+async function runPipeline({ sendEmail = true } = {}) {
+  const mode = sendEmail ? 'email' : 'refresh-only'
+  console.log(`\n[${new Date().toISOString()}] Pipeline started (${mode}).\n`)
 
   try {
-    // Validate env BEFORE running the expensive pipeline — fail early
-    validateEmailEnv()
-    const recipients = parseRecipients(process.env.NOTIFICATION_EMAIL)
-    if (recipients.length === 0) {
-      throw new Error('NOTIFICATION_EMAIL must contain at least one valid recipient')
+    let recipients = []
+    if (sendEmail) {
+      // Validate env BEFORE running the expensive pipeline — fail early
+      validateEmailEnv()
+      recipients = parseRecipients(process.env.NOTIFICATION_EMAIL)
+      if (recipients.length === 0) {
+        throw new Error('NOTIFICATION_EMAIL must contain at least one valid recipient')
+      }
     }
 
     const { guideId, total } = await generateGuide()
     console.log(`\nGuide generated: ${guideId} (${total} picks)`)
+
+    if (!sendEmail) {
+      console.log(`\n[${new Date().toISOString()}] Refresh-only complete — no emails sent.\n`)
+      return
+    }
 
     const { guide, picks } = await loadGuideData(guideId)
 

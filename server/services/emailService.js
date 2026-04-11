@@ -89,12 +89,15 @@ function buildEmailHtml(guide, allPicks, token) {
   const freshHero = freshHeroIdx >= 0 ? fresh[freshHeroIdx] : fresh[0]
   const freshRunners = fresh.filter((_, i) => i !== freshHeroIdx).slice(0, 5)
 
-  const simmeredSorted = simmered
+  // Top Rated: up to 10 total scored picks INCLUDING the hero. Slice first,
+  // then pick hero from the limited list so runners + hero === simmeredTop.length.
+  const simmeredTop = simmered
     .filter((p) => p.combined_score != null)
     .sort((a, b) => b.combined_score - a.combined_score)
-  const simmeredHeroIdx = simmeredSorted.findIndex((p) => p.backdrop_path || p.poster_path)
-  const simmeredHero = simmeredHeroIdx >= 0 ? simmeredSorted[simmeredHeroIdx] : null
-  const simmeredRunners = simmeredSorted.filter((_, i) => i !== simmeredHeroIdx).slice(0, 10)
+    .slice(0, 10)
+  const simmeredHeroIdx = simmeredTop.findIndex((p) => p.backdrop_path || p.poster_path)
+  const simmeredHero = simmeredHeroIdx >= 0 ? simmeredTop[simmeredHeroIdx] : (simmeredTop[0] || null)
+  const simmeredRunners = simmeredTop.filter((p) => p !== simmeredHero)
 
   // Fresh hero
   const freshHeroImage = freshHero ? (freshHero.backdrop_path || freshHero.poster_path || '') : ''
@@ -152,7 +155,7 @@ function buildEmailHtml(guide, allPicks, token) {
   const openAppHref = `${appUrl}/?r=${encodeURIComponent(token)}`
 
   // Simmered section (only if we have scored content)
-  const simmeredSection = simmeredSorted.length > 0 ? `
+  const simmeredSection = simmeredTop.length > 0 ? `
     <!-- Last Week's Top Rated Header -->
     <tr>
       <td style="padding:0 0 16px;">

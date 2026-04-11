@@ -1,0 +1,34 @@
+name: Midweek Guide Refresh
+
+on:
+  schedule:
+    # Every Tuesday at 2:00 PM ET (18:00 UTC)
+    - cron: '0 18 * * 2'
+  workflow_dispatch: # Manual trigger for testing
+
+jobs:
+  refresh-guide:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+
+      - name: Install server dependencies
+        working-directory: server
+        run: npm install
+
+      - name: Run pipeline (refresh-only)
+        env:
+          PIPELINE_MODE: refresh-only
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+          OMDB_API_KEY: ${{ secrets.OMDB_API_KEY }}
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+        working-directory: server
+        run: node scripts/run-pipeline.js

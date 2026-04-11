@@ -5,6 +5,7 @@ const { enrichWithOmdbScores } = require('./fetchOmdb')
 const { getDb } = require('../db/schema')
 
 const MIN_TMDB_VOTES = 5
+const SIMMER_WEEKS = 4
 
 function calculateCombinedScore(imdbScore, rtScore, tmdbVoteAverage, tmdbVoteCount) {
   const normalizedImdb = imdbScore ? imdbScore * 10 : null
@@ -38,7 +39,7 @@ function getSimmeredGuideIds() {
   const dw = getDateWindow()
   const fmt = (d) => d.toISOString().split('T')[0]
   const ids = []
-  for (let w = 1; w <= 2; w++) {
+  for (let w = 1; w <= SIMMER_WEEKS; w++) {
     const sat = new Date(dw.gte + 'T00:00:00')
     sat.setDate(sat.getDate() - (w * 7))
     ids.push(`guide-${fmt(sat)}`)
@@ -76,7 +77,7 @@ async function loadSimmeredCandidates() {
   }
   const deduped = [...seen.values()]
   const dupes = allRows.length - deduped.length
-  if (dupes > 0) console.log(`  Deduped: removed ${dupes} titles appearing in both weeks`)
+  if (dupes > 0) console.log(`  Deduped: removed ${dupes} titles appearing in multiple weeks`)
   console.log(`  Total simmer candidates: ${deduped.length}`)
 
   return deduped.map((p) => ({
@@ -136,7 +137,7 @@ async function saveToDatabase(weekOf, freshPicks, simmeredPicks) {
 async function generateGuide() {
   const startTime = Date.now()
   const errors = []
-  console.log('=== Generating Weekly Guide (2-Week Simmer Model) ===\n')
+  console.log('=== Generating Weekly Guide (4-Week Simmer Model) ===\n')
 
   // ── FRESH DROPS: This week's new releases, sorted by popularity ──
   console.log('Step 1: Fetching this week\'s FRESH DROPS from TMDB...')
@@ -167,8 +168,8 @@ async function generateGuide() {
     console.log(`    #${p.rank} ${p.title} (${p.year}) — popularity ${p.popularity?.toFixed(1)}`)
   }
 
-  // ── SIMMERED PICKS: Last 2 weeks' releases, now scored ──
-  console.log('\nStep 2: Loading picks from past 2 weeks for SIMMERED scoring...')
+  // ── SIMMERED PICKS: Last 4 weeks' releases, now scored ──
+  console.log('\nStep 2: Loading picks from past 4 weeks for SIMMERED scoring...')
   const prevPicks = await loadSimmeredCandidates()
 
   let simmeredPicks = []

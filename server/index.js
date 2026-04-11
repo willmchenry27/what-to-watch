@@ -23,5 +23,9 @@ app.get('/api/health', (req, res) => {
 
 app.listen(process.env.PORT || 3001, '0.0.0.0', () => {
   console.log(`Server running on port ${process.env.PORT || 3001}`)
-  startScheduler()
+  if (process.env.ENABLE_INTERNAL_SCHEDULER === 'true') {
+    startScheduler()
+  } else {
+    console.log('In-process scheduler disabled. Set ENABLE_INTERNAL_SCHEDULER=true to enable.')
+  }
 })

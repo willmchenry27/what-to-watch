@@ -33,8 +33,8 @@ export default function PickCard({ pick, isFeatured = false, isFirstRow = false,
             </h2>
           </div>
 
-          <div className="absolute inset-0 bg-gradient-to-r from-[var(--color-dark-950)] via-[var(--color-dark-950)]/95 to-transparent" />
-          <div className="absolute inset-0 bg-gradient-to-t from-[var(--color-dark-950)] via-[var(--color-dark-950)]/30 to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-r from-[var(--color-dark-950)] from-0% via-[var(--color-dark-950)]/80 via-35% to-transparent to-75%" />
+          <div className="absolute inset-0 bg-gradient-to-t from-[var(--color-dark-950)] via-[var(--color-dark-950)]/20 to-transparent" />
 
           <div className="absolute inset-0 flex flex-col justify-end p-4 sm:p-6 md:p-10 lg:p-12">
             <div className="max-w-xl">

@@ -50,7 +50,7 @@ export default function ActionButtons({ tmdbId, size = 'sm' }) {
   const disabled = !hasToken
 
   return (
-    <div className="flex items-center gap-1.5">
+    <div className={`flex items-center ${isLg ? 'gap-2' : 'gap-1.5'}`}>
       {actions.map(({ key, label, activeClass, icon, iconFilled }) => {
         const active = !disabled && !!current[key]
         return (
@@ -67,7 +67,7 @@ export default function ActionButtons({ tmdbId, size = 'sm' }) {
               toggleAction(tmdbId, key)
             }}
             className={`
-              ${isLg ? 'w-9 h-9' : 'w-7 h-7'}
+              ${isLg ? 'h-9 px-3 gap-1.5 text-xs font-medium' : 'w-7 h-7'}
               flex items-center justify-center rounded-full
               border transition-all duration-200
               ${disabled
@@ -84,10 +84,11 @@ export default function ActionButtons({ tmdbId, size = 'sm' }) {
               viewBox="0 0 24 24"
               strokeWidth={1.5}
               stroke="currentColor"
-              className={isLg ? 'w-5 h-5' : 'w-4 h-4'}
+              className={isLg ? 'w-4 h-4' : 'w-4 h-4'}
             >
               {active ? iconFilled : icon}
             </svg>
+            {isLg && <span>{label}</span>}
           </button>
         )
       })}

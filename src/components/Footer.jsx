@@ -8,7 +8,7 @@ export default function Footer() {
               What to Watch
             </p>
             <p className="text-xs text-cream-300/40 mt-1">
-              Ranked by critics, updated every Friday.
+              Email sends Friday. Website refreshes Tuesday.
             </p>
           </div>
           <div className="text-xs text-cream-300/30">

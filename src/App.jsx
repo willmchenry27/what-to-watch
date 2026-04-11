@@ -6,6 +6,18 @@ import ErrorBoundary from './components/ErrorBoundary'
 import { SkeletonHero, SkeletonGrid } from './components/SkeletonCard'
 import { useGuide } from './hooks/useGuide'
 
+// Visual-only sort: keep cards with usable artwork above cards without.
+// Stable within each group, so the real `rank` ordering is preserved.
+function demoteImageless(picks) {
+  const withImage = []
+  const withoutImage = []
+  for (const p of picks) {
+    if (p.backdrop_path || p.poster_path) withImage.push(p)
+    else withoutImage.push(p)
+  }
+  return [...withImage, ...withoutImage]
+}
+
 function searchFilter(picks, query) {
   if (!query.trim()) return picks
   const q = query.toLowerCase()
@@ -19,7 +31,7 @@ function searchFilter(picks, query) {
 }
 
 function App() {
-  const [activeTab, setActiveTab] = useState('movies')
+  const [activeTab, setActiveTab] = useState('last_week')
   const [searchQuery, setSearchQuery] = useState('')
   const [showAllFresh, setShowAllFresh] = useState(false)
 
@@ -29,25 +41,32 @@ function App() {
   const simmeredPicks = useMemo(() => allPicks.filter((p) => p.cohort === 'simmered'), [allPicks])
 
   const isLastWeek = activeTab === 'last_week'
-  const filterType = activeTab === 'tv' ? 'tv' : 'movie'
 
-  // Fresh Drops — filtered by type tab + search
+  // Fresh Drops — search only (no type filter; movies + TV mixed)
   const filteredFresh = useMemo(() => {
-    const byType = freshPicks.filter((p) => p.type === filterType)
-    return searchFilter(byType, searchQuery)
-  }, [freshPicks, filterType, searchQuery])
+    return searchFilter(freshPicks, searchQuery)
+  }, [freshPicks, searchQuery])
 
   // Simmered — search only (no type filter, show all on its own tab)
   const filteredSimmered = useMemo(() => {
     return searchFilter(simmeredPicks, searchQuery)
   }, [simmeredPicks, searchQuery])
 
-  // Heroes
-  const heroFresh = filteredFresh[0]
-  const remainingFresh = filteredFresh.slice(1)
+  // Heroes — mirror the email rule: prefer the highest-ranked pick that has a
+  // usable image (backdrop or poster), fall back to the highest-ranked pick
+  // only if none in the list have images.
+  const heroFresh =
+    filteredFresh.find((p) => p.backdrop_path || p.poster_path) ||
+    filteredFresh[0] ||
+    null
+  const remainingFresh = demoteImageless(filteredFresh.filter((p) => p !== heroFresh))
 
-  const heroSimmered = filteredSimmered.find((p) => p.combined_score != null)
-  const remainingSimmered = filteredSimmered.filter((p) => p !== heroSimmered)
+  const scoredSimmered = filteredSimmered.filter((p) => p.combined_score != null)
+  const heroSimmered =
+    scoredSimmered.find((p) => p.backdrop_path || p.poster_path) ||
+    scoredSimmered[0] ||
+    null
+  const remainingSimmered = demoteImageless(scoredSimmered.filter((p) => p !== heroSimmered))
 
   const FIRST_ROW_COUNT = 4
   const FRESH_GRID_LIMIT = 4
@@ -135,7 +154,7 @@ function App() {
                 <div className="h-px flex-1 bg-white/10" />
               </div>
 
-              {filteredSimmered.length === 0 ? (
+              {scoredSimmered.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-20">
                   <div className="w-16 h-16 rounded-full bg-white/5 border border-white/10 flex items-center justify-center mb-4">
                     <svg className="w-8 h-8 text-cream-300/20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -156,11 +175,9 @@ function App() {
                   {remainingSimmered.length > 0 && (
                     <section>
                       <div className="flex items-center justify-between mb-4 sm:mb-6">
-                        <h2 className="font-display text-xl sm:text-2xl font-semibold text-cream-100">
-                          Runners-Up
-                        </h2>
-                        <span className="text-xs text-cream-300/40">
-                          {remainingSimmered.length} titles
+                        <h2 className="font-display text-xl sm:text-2xl font-semibold text-cream-100 whitespace-nowrap">More Top Rated</h2>
+                        <span className="hidden sm:inline text-xs text-cream-300/40">
+                          {remainingSimmered.length} in the pool
                         </span>
                       </div>
                       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-3 sm:gap-x-4 gap-y-6 sm:gap-y-10">
@@ -194,10 +211,10 @@ function App() {
                   </div>
                   <p className="text-cream-300/50 text-sm">No titles found.</p>
                   <button
-                    onClick={() => { setActiveTab('movies'); setSearchQuery('') }}
+                    onClick={() => { setActiveTab('last_week'); setSearchQuery('') }}
                     className="mt-3 text-xs text-gold-400 hover:text-gold-500 cursor-pointer transition-colors"
                   >
-                    Back to Movies
+                    Back to Top Rated
                   </button>
                 </div>
               ) : (
@@ -218,7 +235,7 @@ function App() {
                             Fresh Drops
                           </h2>
                           <p className="text-xs text-cream-300/40 mt-1">
-                            New this week — sorted by buzz
+                            New this week — ranked by release buzz
                           </p>
                         </div>
                         <span className="text-xs text-cream-300/40">

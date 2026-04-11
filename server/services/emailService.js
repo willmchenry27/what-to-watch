@@ -46,8 +46,8 @@ function tmdbUrl(pick) {
 function actionLinks(pick, token) {
   const apiBase = process.env.API_PUBLIC_URL || process.env.APP_URL || 'http://localhost:3001'
   const t = encodeURIComponent(token)
-  const linkStyle = 'color:#555;font-size:10px;text-decoration:none;'
-  return `<div style="margin-top:6px;"><a href="${apiBase}/api/actions/seen/${pick.tmdb_id}?r=${t}" style="${linkStyle}">Seen it</a> &nbsp;&middot;&nbsp; <a href="${apiBase}/api/actions/dismiss/${pick.tmdb_id}?r=${t}" style="${linkStyle}">Not for me</a></div>`
+  const linkStyle = 'color:#999;font-size:11px;text-decoration:none;'
+  return `<div style="margin-top:10px;"><a href="${apiBase}/api/actions/seen/${pick.tmdb_id}?r=${t}" style="${linkStyle}">Seen it</a> &nbsp;&nbsp;&middot;&nbsp;&nbsp; <a href="${apiBase}/api/actions/dismiss/${pick.tmdb_id}?r=${t}" style="${linkStyle}">Not for me</a></div>`
 }
 
 function buildPickRow(pick, rank, showScore, token) {
@@ -108,7 +108,7 @@ function buildEmailHtml(guide, allPicks, token) {
           ${freshHeroImage ? `<tr><td><img src="${freshHeroImage}" alt="${freshHero.title}" width="600" style="display:block;width:100%;height:auto;max-height:240px;object-fit:cover;" /></td></tr>` : ''}
           <tr>
             <td style="padding:20px 24px;">
-              <p style="margin:0 0 6px;font-size:11px;font-weight:700;color:#c9a84c;text-transform:uppercase;letter-spacing:2px;">#1 Most Anticipated</p>
+              <p style="margin:0 0 6px;font-size:11px;font-weight:700;color:#c9a84c;text-transform:uppercase;letter-spacing:2px;">Featured Fresh Drop</p>
               <h2 style="margin:0 0 6px;font-size:24px;font-weight:800;color:#f5f0e8;">${tmdbUrl(freshHero) ? `<a href="${tmdbUrl(freshHero)}" style="color:#f5f0e8;text-decoration:none;">${freshHero.title}</a>` : freshHero.title}</h2>
               <p style="margin:0 0 10px;font-size:13px;color:#888;">${(freshHero.genres || []).join(', ')}${freshHero.platform ? ' &middot; ' + freshHero.platform : ''}</p>
               ${freshHero.description ? `<p style="margin:0;font-size:13px;line-height:1.5;color:#aaa;">${freshHero.description.slice(0, 200)}${freshHero.description.length > 200 ? '...' : ''}</p>` : ''}
@@ -136,7 +136,7 @@ function buildEmailHtml(guide, allPicks, token) {
           ${simHeroImage ? `<tr><td><img src="${simHeroImage}" alt="${simmeredHero.title}" width="600" style="display:block;width:100%;height:auto;max-height:240px;object-fit:cover;" /></td></tr>` : ''}
           <tr>
             <td style="padding:20px 24px;">
-              <p style="margin:0 0 6px;font-size:11px;font-weight:700;color:#c9a84c;text-transform:uppercase;letter-spacing:2px;">#1 Top Rated</p>
+              <p style="margin:0 0 6px;font-size:11px;font-weight:700;color:#c9a84c;text-transform:uppercase;letter-spacing:2px;">Featured Top Rated</p>
               <h2 style="margin:0 0 6px;font-size:24px;font-weight:800;color:#f5f0e8;">${tmdbUrl(simmeredHero) ? `<a href="${tmdbUrl(simmeredHero)}" style="color:#f5f0e8;text-decoration:none;">${simmeredHero.title}</a>` : simmeredHero.title}</h2>
               <p style="margin:0 0 10px;font-size:13px;color:#888;">${(simmeredHero.genres || []).join(', ')}${simmeredHero.platform ? ' &middot; ' + simmeredHero.platform : ''}</p>
               <div style="margin:0 0 12px;">${simScoreHtml}${simImdb}${simRt}${simTmdb}</div>
@@ -155,12 +155,16 @@ function buildEmailHtml(guide, allPicks, token) {
   const openAppHref = `${appUrl}/?r=${encodeURIComponent(token)}`
 
   // Simmered section (only if we have scored content)
+  const shortNote = simmeredTop.length > 0 && simmeredTop.length < 10
+    ? `<p style="margin:6px 0 0;font-size:12px;color:#777;font-style:italic;">Showing ${simmeredTop.length} scored pick${simmeredTop.length === 1 ? '' : 's'} this week. We don't pad with unscored titles.</p>`
+    : ''
   const simmeredSection = simmeredTop.length > 0 ? `
     <!-- Last Week's Top Rated Header -->
     <tr>
       <td style="padding:0 0 16px;">
         <h3 style="margin:0 0 4px;font-size:14px;font-weight:700;color:#c9a84c;text-transform:uppercase;letter-spacing:1px;">Top Rated</h3>
-        <p style="margin:0;font-size:12px;color:#555;">Scores settled — ranked by IMDb + community ratings</p>
+        <p style="margin:0;font-size:12px;color:#777;">Scored picks from the last 4 weeks.</p>
+        ${shortNote}
       </td>
     </tr>
 
@@ -189,6 +193,7 @@ function buildEmailHtml(guide, allPicks, token) {
               <h1 style="margin:0;font-size:28px;font-weight:800;color:#f5f0e8;letter-spacing:-0.5px;">What to Watch</h1>
               <p style="margin:6px 0 0;font-size:16px;font-style:italic;color:#c9a84c;">This Friday</p>
               <p style="margin:8px 0 0;font-size:12px;color:#666;text-transform:uppercase;letter-spacing:2px;">Week of ${guide.week_of}</p>
+              <p style="margin:14px 0 0;font-size:12px;color:#888;">Top Rated looks back over the last 4 weeks. Fresh Drops are new this week.</p>
             </td>
           </tr>
 
@@ -209,7 +214,7 @@ function buildEmailHtml(guide, allPicks, token) {
           <!-- Open app CTA -->
           <tr>
             <td style="padding:24px 0 0;text-align:center;">
-              <a href="${openAppHref}" style="display:inline-block;padding:10px 20px;background:#c9a84c;color:#0a0a0c;border-radius:6px;text-decoration:none;font-size:13px;font-weight:700;">Open What to Watch</a>
+              <a href="${openAppHref}" style="display:inline-block;padding:12px 24px;background:#c9a84c;color:#0a0a0c;border-radius:6px;text-decoration:none;font-size:14px;font-weight:700;">Open your personalized guide</a>
             </td>
           </tr>
 
@@ -218,7 +223,7 @@ function buildEmailHtml(guide, allPicks, token) {
             <td style="padding:32px 0 0;text-align:center;">
               <div style="height:1px;background:rgba(255,255,255,0.06);margin-bottom:24px;"></div>
               <p style="margin:0;font-size:13px;font-weight:600;color:#888;">What to Watch</p>
-              <p style="margin:4px 0 0;font-size:11px;color:#555;">Ranked by critics, updated every Friday.</p>
+              <p style="margin:4px 0 0;font-size:11px;color:#555;">Email sends Friday. Website refreshes Tuesday.</p>
               <p style="margin:4px 0 0;font-size:10px;color:#444;">Powered by IMDb + TMDB</p>
             </td>
           </tr>

@@ -22,6 +22,26 @@ function calculateCombinedScore(imdbScore, rtScore, tmdbVoteAverage, tmdbVoteCou
   return null
 }
 
+function hasUsableImage(p) {
+  return Boolean(p.backdrop_path || p.poster_path)
+}
+
+function hasMeaningfulDescription(p) {
+  return Boolean(p.description && p.description.trim().length >= 40)
+}
+
+function hasGenres(p) {
+  return Array.isArray(p.genres) ? p.genres.length > 0 : Boolean(p.genres)
+}
+
+function isFreshDropCandidate(p) {
+  return Boolean(p.title) && hasMeaningfulDescription(p) && hasGenres(p) && hasUsableImage(p) && (!p.in_theaters || p.platform)
+}
+
+function isTopRatedCandidate(p) {
+  return p.combined_score !== null && p.combined_score !== undefined
+}
+
 function rankPicks(picks) {
   return picks
     .sort((a, b) => {
@@ -152,8 +172,9 @@ async function generateGuide() {
     throw err
   }
 
+  const freshBeforeQuality = tmdbPicks.filter((p) => !p.in_theaters || p.platform).length
   let freshPicks = tmdbPicks
-    .filter((p) => !p.in_theaters || p.platform)
+    .filter(isFreshDropCandidate)
     .sort((a, b) => (b.popularity || 0) - (a.popularity || 0))
     .map((p, i) => ({
       ...p,
@@ -163,6 +184,8 @@ async function generateGuide() {
       combined_score: null,
     }))
 
+  const freshDropped = freshBeforeQuality - freshPicks.length
+  if (freshDropped > 0) console.log(`  Fresh quality filter: removed ${freshDropped} weak picks (missing image, description, or genres)`)
   console.log(`\n  Fresh Drops: ${freshPicks.length} titles (ranked by TMDB popularity)`)
   for (const p of freshPicks.slice(0, 5)) {
     console.log(`    #${p.rank} ${p.title} (${p.year}) — popularity ${p.popularity?.toFixed(1)}`)
@@ -240,11 +263,10 @@ async function generateGuide() {
         combined_score: calculateCombinedScore(p.imdb_score, p.rt_score, p.tmdb_vote_average, p.tmdb_vote_count),
       }))
 
-    // Quality filter: drop picks with no score AND no US platform (unwatchable noise)
     const beforeQuality = simmeredPicks.length
-    simmeredPicks = simmeredPicks.filter((p) => p.combined_score !== null || p.platform)
+    simmeredPicks = simmeredPicks.filter(isTopRatedCandidate)
     const qualityDropped = beforeQuality - simmeredPicks.length
-    if (qualityDropped > 0) console.log(`  Quality filter: removed ${qualityDropped} unscored picks with no US platform`)
+    if (qualityDropped > 0) console.log(`  Top Rated quality filter: removed ${qualityDropped} unscored picks`)
 
     simmeredPicks = rankPicks(simmeredPicks)
 

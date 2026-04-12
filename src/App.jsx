@@ -47,19 +47,36 @@ function App() {
 
   const { hasToken } = useUserActions()
   const [rawSavedPicks, setRawSavedPicks] = useState([])
-  const [savedVersion, setSavedVersion] = useState(0)
+  const [savedRequestVersion, setSavedRequestVersion] = useState(0)
+  const [savedLoadedVersion, setSavedLoadedVersion] = useState(-1)
+  const [savedError, setSavedError] = useState(false)
 
-  const refreshSaved = useCallback(() => setSavedVersion((v) => v + 1), [])
+  const savedLoading = hasToken && isSaved && savedLoadedVersion < savedRequestVersion
+
+  const refreshSaved = useCallback(() => setSavedRequestVersion((v) => v + 1), [])
 
   useEffect(() => {
     if (!hasToken || !isSaved) return
     let cancelled = false
+    const version = savedRequestVersion
     apiFetch('/api/actions/saved', { auth: true })
-      .then((res) => res.ok ? res.json() : [])
-      .then((data) => { if (!cancelled) setRawSavedPicks(data) })
-      .catch(() => { if (!cancelled) setRawSavedPicks([]) })
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        return res.json()
+      })
+      .then((data) => {
+        if (cancelled) return
+        setRawSavedPicks(data)
+        setSavedError(false)
+        setSavedLoadedVersion(version)
+      })
+      .catch(() => {
+        if (cancelled) return
+        setSavedError(true)
+        setSavedLoadedVersion(version)
+      })
     return () => { cancelled = true }
-  }, [hasToken, isSaved, savedVersion])
+  }, [hasToken, isSaved, savedRequestVersion])
 
   const savedPicks = useMemo(() => searchFilter(rawSavedPicks, searchQuery), [rawSavedPicks, searchQuery])
 
@@ -184,7 +201,27 @@ function App() {
                   </div>
                   <p className="text-cream-300/50 text-sm">Open your latest What to Watch email to enable your saved list.</p>
                 </div>
-              ) : savedPicks.length === 0 ? (
+              ) : savedLoading && rawSavedPicks.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-20">
+                  <p className="text-cream-300/50 text-sm">Loading saved picks…</p>
+                </div>
+              ) : savedError && rawSavedPicks.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-20">
+                  <div className="w-16 h-16 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center mb-4">
+                    <svg className="w-8 h-8 text-red-400/70" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+                    </svg>
+                  </div>
+                  <p className="text-cream-300/50 text-sm">Couldn't load saved picks.</p>
+                  <button
+                    type="button"
+                    onClick={refreshSaved}
+                    className="mt-3 px-4 py-2 text-xs rounded-md bg-gold-400 text-dark-950 font-semibold hover:bg-gold-500 cursor-pointer transition-colors"
+                  >
+                    Retry
+                  </button>
+                </div>
+              ) : savedPicks.length === 0 && !savedError ? (
                 <div className="flex flex-col items-center justify-center py-20">
                   <div className="w-16 h-16 rounded-full bg-white/5 border border-white/10 flex items-center justify-center mb-4">
                     <svg className="w-8 h-8 text-cream-300/20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -195,11 +232,25 @@ function App() {
                   <p className="text-cream-300/30 text-xs mt-1">Tap Save on anything you want to watch later.</p>
                 </div>
               ) : (
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-3 sm:gap-x-4 gap-y-6 sm:gap-y-10">
-                  {savedPicks.map((pick, i) => (
-                    <PickCard key={pick.tmdb_id} pick={pick} isFirstRow={i < FIRST_ROW_COUNT} onAction={refreshSaved} />
-                  ))}
-                </div>
+                <>
+                  {savedError && (
+                    <div className="flex items-center gap-2 mb-4 px-3 py-2 rounded-md bg-red-500/10 border border-red-500/20">
+                      <p className="text-xs text-red-400/70 flex-1">Couldn't refresh saved picks.</p>
+                      <button
+                        type="button"
+                        onClick={refreshSaved}
+                        className="text-xs text-gold-400 hover:text-gold-500 cursor-pointer transition-colors"
+                      >
+                        Retry
+                      </button>
+                    </div>
+                  )}
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-3 sm:gap-x-4 gap-y-6 sm:gap-y-10">
+                    {savedPicks.map((pick, i) => (
+                      <PickCard key={pick.tmdb_id} pick={pick} isFirstRow={i < FIRST_ROW_COUNT} onAction={refreshSaved} />
+                    ))}
+                  </div>
+                </>
               )}
             </>
 

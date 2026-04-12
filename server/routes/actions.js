@@ -134,7 +134,7 @@ router.get('/:action_type/:tmdb_id', async (req, res) => {
   if (!recipient) return
 
   const { action_type, tmdb_id } = req.params
-  if (!['seen', 'dismiss'].includes(action_type)) {
+  if (!['seen', 'dismiss', 'save'].includes(action_type)) {
     return res.status(400).send('Invalid action')
   }
 
@@ -159,7 +159,12 @@ router.get('/:action_type/:tmdb_id', async (req, res) => {
     })
   }
 
-  const label = action_type === 'seen' ? 'Marked as seen' : 'Dismissed'
+  const labels = { seen: 'Marked as seen', dismiss: 'Dismissed', save: 'Saved' }
+  const messages = {
+    seen: "Got it — we'll hide this from your future emails.",
+    dismiss: "Got it — we'll hide this from your future emails.",
+    save: 'Saved to your pull list.',
+  }
   const apiBase = process.env.API_PUBLIC_URL || process.env.APP_URL || 'http://localhost:3001'
   const appUrl = process.env.APP_URL || 'http://localhost:3001'
   const token = encodeURIComponent(req.query.r)
@@ -167,8 +172,8 @@ router.get('/:action_type/:tmdb_id', async (req, res) => {
   const openAppUrl = `${appUrl}/?r=${token}`
 
   res.send(confirmationHtml(
-    `${label}: ${displayTitle}`,
-    "Got it — we'll hide this from your future emails.",
+    `${labels[action_type]}: ${displayTitle}`,
+    messages[action_type],
     undoUrl,
     openAppUrl
   ))
@@ -180,7 +185,7 @@ router.get('/undo/:action_type/:tmdb_id', async (req, res) => {
   if (!recipient) return
 
   const { action_type, tmdb_id } = req.params
-  if (!['seen', 'dismiss'].includes(action_type)) {
+  if (!['seen', 'dismiss', 'save'].includes(action_type)) {
     return res.status(400).send('Invalid action')
   }
 
@@ -199,13 +204,16 @@ router.get('/undo/:action_type/:tmdb_id', async (req, res) => {
     args: [recipient, id, action_type],
   })
 
+  const undoMessage = action_type === 'save'
+    ? 'Removed from your saved list.'
+    : 'This title will appear in your future emails again.'
   const appUrl = process.env.APP_URL || 'http://localhost:3001'
   const token = encodeURIComponent(req.query.r)
   const openAppUrl = `${appUrl}/?r=${token}`
 
   res.send(confirmationHtml(
     `Restored: ${displayTitle}`,
-    'This title will appear in your future emails again.',
+    undoMessage,
     null,
     openAppUrl
   ))

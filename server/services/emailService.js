@@ -47,7 +47,7 @@ function actionLinks(pick, token) {
   const apiBase = process.env.API_PUBLIC_URL || process.env.APP_URL || 'http://localhost:3001'
   const t = encodeURIComponent(token)
   const linkStyle = 'color:#999;font-size:11px;text-decoration:none;'
-  return `<div style="margin-top:10px;"><a href="${apiBase}/api/actions/seen/${pick.tmdb_id}?r=${t}" style="${linkStyle}">Seen it</a> &nbsp;&nbsp;&middot;&nbsp;&nbsp; <a href="${apiBase}/api/actions/dismiss/${pick.tmdb_id}?r=${t}" style="${linkStyle}">Not for me</a></div>`
+  return `<div style="margin-top:10px;"><a href="${apiBase}/api/actions/seen/${pick.tmdb_id}?r=${t}" style="${linkStyle}">Seen it</a> &nbsp;&nbsp;&middot;&nbsp;&nbsp; <a href="${apiBase}/api/actions/dismiss/${pick.tmdb_id}?r=${t}" style="${linkStyle}">Not for me</a> &nbsp;&nbsp;&middot;&nbsp;&nbsp; <a href="${apiBase}/api/actions/save/${pick.tmdb_id}?r=${t}" style="${linkStyle}">Save it</a></div>`
 }
 
 function buildPickRow(pick, rank, showScore, token) {
@@ -72,7 +72,7 @@ function buildPickRow(pick, rank, showScore, token) {
               <div style="font-size:16px;font-weight:700;color:#f5f0e8;margin-bottom:4px;">${tmdbUrl(pick) ? `<a href="${tmdbUrl(pick)}" style="color:#f5f0e8;text-decoration:none;">${pick.title}</a>` : pick.title}</div>
               <div style="font-size:12px;color:#888;margin-bottom:${scores ? '6' : '0'}px;">${(pick.genres || []).slice(0, 3).join(', ')} ${platform ? '&nbsp;&middot;&nbsp;' + platform : ''}</div>
               ${scores ? `<div style="font-size:12px;color:#999;">${scores}</div>` : ''}
-              ${showScore ? actionLinks(pick, token) : ''}
+              ${actionLinks(pick, token)}
             </td>
             ${showScore ? `<td width="60" style="vertical-align:middle;text-align:right;">${scoreHtml}</td>` : ''}
           </tr>
@@ -111,7 +111,8 @@ function buildEmailHtml(guide, allPicks, token) {
               <p style="margin:0 0 6px;font-size:11px;font-weight:700;color:#c9a84c;text-transform:uppercase;letter-spacing:2px;">Featured Fresh Drop</p>
               <h2 style="margin:0 0 6px;font-size:24px;font-weight:800;color:#f5f0e8;">${tmdbUrl(freshHero) ? `<a href="${tmdbUrl(freshHero)}" style="color:#f5f0e8;text-decoration:none;">${freshHero.title}</a>` : freshHero.title}</h2>
               <p style="margin:0 0 10px;font-size:13px;color:#888;">${(freshHero.genres || []).join(', ')}${freshHero.platform ? ' &middot; ' + freshHero.platform : ''}</p>
-              ${freshHero.description ? `<p style="margin:0;font-size:13px;line-height:1.5;color:#aaa;">${freshHero.description.slice(0, 200)}${freshHero.description.length > 200 ? '...' : ''}</p>` : ''}
+              ${freshHero.description ? `<p style="margin:0 0 10px;font-size:13px;line-height:1.5;color:#aaa;">${freshHero.description.slice(0, 200)}${freshHero.description.length > 200 ? '...' : ''}</p>` : ''}
+              ${actionLinks(freshHero, token)}
             </td>
           </tr>
         </table>

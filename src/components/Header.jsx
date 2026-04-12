@@ -1,6 +1,7 @@
 const tabs = [
   { id: 'last_week', label: 'Top Rated' },
   { id: 'fresh', label: 'Fresh Drops' },
+  { id: 'saved', label: 'Saved' },
 ]
 
 export default function Header({ activeTab, onTabChange, searchQuery, onSearchChange }) {

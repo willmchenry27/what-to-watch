@@ -3,7 +3,7 @@ import ScoreBadge from './ScoreBadge'
 import ImageWithFallback from './ImageWithFallback'
 import ActionButtons from './ActionButtons'
 
-export default function PickCard({ pick, isFeatured = false, isFirstRow = false, hideScores = false }) {
+export default function PickCard({ pick, isFeatured = false, isFirstRow = false, hideScores = false, onAction }) {
   const {
     title, year, season, genres, platform, availability, poster_path, backdrop_path,
     imdb_score, rt_score, combined_score, rank, tmdb_id, type,
@@ -75,7 +75,7 @@ export default function PickCard({ pick, isFeatured = false, isFirstRow = false,
               </p>
             )}
             <div className="mt-3">
-              <ActionButtons tmdbId={tmdb_id} size="lg" />
+              <ActionButtons tmdbId={tmdb_id} size="lg" onAction={onAction} />
             </div>
           </div>
         </div>
@@ -120,7 +120,7 @@ export default function PickCard({ pick, isFeatured = false, isFirstRow = false,
                 )}
 
                 <div className="mt-4">
-                  <ActionButtons tmdbId={tmdb_id} size="lg" />
+                  <ActionButtons tmdbId={tmdb_id} size="lg" onAction={onAction} />
                 </div>
               </div>
             </div>
@@ -177,7 +177,7 @@ export default function PickCard({ pick, isFeatured = false, isFirstRow = false,
 
         <div className="flex items-center justify-between">
           {!hideScores ? <ScoreBadge imdbScore={imdb_score} rtScore={rt_score} combinedScore={combined_score} /> : <span />}
-          <ActionButtons tmdbId={tmdb_id} />
+          <ActionButtons tmdbId={tmdb_id} onAction={onAction} />
         </div>
       </div>
     </article>

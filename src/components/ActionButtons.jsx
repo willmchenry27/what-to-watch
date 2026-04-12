@@ -42,7 +42,7 @@ const actions = [
   },
 ]
 
-export default function ActionButtons({ tmdbId, size = 'sm' }) {
+export default function ActionButtons({ tmdbId, size = 'sm', onAction }) {
   const { toggleAction, getActions, hasToken } = useUserActions()
   const current = getActions(tmdbId)
 
@@ -61,10 +61,11 @@ export default function ActionButtons({ tmdbId, size = 'sm' }) {
             aria-label={disabled ? 'Open from your email to sync state' : `${active ? 'Remove from' : 'Add to'} ${label}`}
             aria-pressed={active}
             title={disabled ? 'Open this site from your weekly email to enable actions' : undefined}
-            onClick={(e) => {
+            onClick={async (e) => {
               e.stopPropagation()
               if (disabled) return
-              toggleAction(tmdbId, key)
+              await toggleAction(tmdbId, key)
+              if (onAction) onAction()
             }}
             className={`
               ${isLg ? 'h-9 px-3 gap-1.5 text-xs font-medium' : 'w-7 h-7'}

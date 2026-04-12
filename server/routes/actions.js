@@ -102,6 +102,32 @@ router.get('/', async (req, res) => {
   res.json(actions)
 })
 
+// GET /api/actions/saved — full saved pick data for the recipient's pull list
+router.get('/saved', async (req, res) => {
+  const recipient = requireHeaderToken(req, res)
+  if (!recipient) return
+
+  const db = await getDb()
+  const result = await db.execute({
+    sql: `SELECT p.*, ra.created_at AS saved_at
+      FROM recipient_actions ra
+      JOIN picks p ON p.tmdb_id = ra.tmdb_id
+      WHERE ra.recipient_email = ? AND ra.action_type = 'save'
+        AND p.id = (SELECT MAX(p2.id) FROM picks p2 WHERE p2.tmdb_id = ra.tmdb_id)
+      ORDER BY ra.created_at DESC`,
+    args: [recipient],
+  })
+
+  const picks = result.rows.map((p) => ({
+    ...p,
+    genres: JSON.parse(p.genres),
+    cast: JSON.parse(p.cast_list),
+    in_theaters: Boolean(p.in_theaters),
+  }))
+
+  res.json(picks)
+})
+
 // GET /api/actions/:action_type/:tmdb_id?r=<token> — email link click (records + returns HTML)
 router.get('/:action_type/:tmdb_id', async (req, res) => {
   const recipient = requireQueryToken(req, res)

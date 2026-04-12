@@ -39,7 +39,7 @@ export function UserActionsProvider({ children }) {
       }
     })
 
-    apiFetch('/api/actions', {
+    return apiFetch('/api/actions', {
       method: 'POST',
       auth: true,
       body: JSON.stringify({ tmdb_id: tmdbId, action_type: actionType }),

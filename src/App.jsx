@@ -1,10 +1,12 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
 import Header from './components/Header'
 import PickCard from './components/PickCard'
 import Footer from './components/Footer'
 import ErrorBoundary from './components/ErrorBoundary'
 import { SkeletonHero, SkeletonGrid } from './components/SkeletonCard'
 import { useGuide } from './hooks/useGuide'
+import { useUserActions } from './hooks/useUserActions'
+import { apiFetch } from './lib/api'
 
 // Visual-only sort: keep cards with usable artwork above cards without.
 // Stable within each group, so the real `rank` ordering is preserved.
@@ -41,6 +43,25 @@ function App() {
   const simmeredPicks = useMemo(() => allPicks.filter((p) => p.cohort === 'simmered'), [allPicks])
 
   const isLastWeek = activeTab === 'last_week'
+  const isSaved = activeTab === 'saved'
+
+  const { hasToken } = useUserActions()
+  const [rawSavedPicks, setRawSavedPicks] = useState([])
+  const [savedVersion, setSavedVersion] = useState(0)
+
+  const refreshSaved = useCallback(() => setSavedVersion((v) => v + 1), [])
+
+  useEffect(() => {
+    if (!hasToken || !isSaved) return
+    let cancelled = false
+    apiFetch('/api/actions/saved', { auth: true })
+      .then((res) => res.ok ? res.json() : [])
+      .then((data) => { if (!cancelled) setRawSavedPicks(data) })
+      .catch(() => { if (!cancelled) setRawSavedPicks([]) })
+    return () => { cancelled = true }
+  }, [hasToken, isSaved, savedVersion])
+
+  const savedPicks = useMemo(() => searchFilter(rawSavedPicks, searchQuery), [rawSavedPicks, searchQuery])
 
   // Fresh Drops — search only (no type filter; movies + TV mixed)
   const filteredFresh = useMemo(() => {
@@ -142,6 +163,45 @@ function App() {
                 </>
               )}
             </div>
+
+          ) : isSaved ? (
+            /* ═══ SAVED / PULL LIST TAB ═══ */
+            <>
+              <div className="flex items-center gap-3 mb-6 sm:mb-8">
+                <div className="h-px flex-1 bg-white/10" />
+                <span className="text-[10px] sm:text-xs uppercase tracking-widest text-cream-300/50">
+                  Your watch-later list
+                </span>
+                <div className="h-px flex-1 bg-white/10" />
+              </div>
+
+              {!hasToken ? (
+                <div className="flex flex-col items-center justify-center py-20">
+                  <div className="w-16 h-16 rounded-full bg-white/5 border border-white/10 flex items-center justify-center mb-4">
+                    <svg className="w-8 h-8 text-cream-300/20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0111.186 0z" />
+                    </svg>
+                  </div>
+                  <p className="text-cream-300/50 text-sm">Open your latest What to Watch email to enable your saved list.</p>
+                </div>
+              ) : savedPicks.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-20">
+                  <div className="w-16 h-16 rounded-full bg-white/5 border border-white/10 flex items-center justify-center mb-4">
+                    <svg className="w-8 h-8 text-cream-300/20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0111.186 0z" />
+                    </svg>
+                  </div>
+                  <p className="text-cream-300/50 text-sm">No saved picks yet.</p>
+                  <p className="text-cream-300/30 text-xs mt-1">Tap Save on anything you want to watch later.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-3 sm:gap-x-4 gap-y-6 sm:gap-y-10">
+                  {savedPicks.map((pick, i) => (
+                    <PickCard key={pick.tmdb_id} pick={pick} isFirstRow={i < FIRST_ROW_COUNT} onAction={refreshSaved} />
+                  ))}
+                </div>
+              )}
+            </>
 
           ) : isLastWeek ? (
             /* ═══ LAST WEEK'S TOP RATED TAB ═══ */

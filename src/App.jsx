@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useCallback } from 'react'
+import { Analytics } from '@vercel/analytics/react'
 import Header from './components/Header'
 import PickCard from './components/PickCard'
 import Footer from './components/Footer'
@@ -379,6 +380,7 @@ function App() {
       </main>
 
       <Footer />
+      <Analytics />
     </div>
   )
 }

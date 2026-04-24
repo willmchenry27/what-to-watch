@@ -1,5 +1,6 @@
 const tabs = [
   { id: 'last_week', label: 'Top Rated' },
+  { id: 'returning', label: 'New Seasons' },
   { id: 'fresh', label: 'Fresh Drops' },
   { id: 'saved', label: 'Saved' },
 ]

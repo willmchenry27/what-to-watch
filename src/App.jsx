@@ -41,9 +41,11 @@ function App() {
 
   const freshPicks = useMemo(() => allPicks.filter((p) => p.cohort === 'fresh'), [allPicks])
   const simmeredPicks = useMemo(() => allPicks.filter((p) => p.cohort === 'simmered'), [allPicks])
+  const returningPicks = useMemo(() => allPicks.filter((p) => p.cohort === 'returning'), [allPicks])
 
   const isLastWeek = activeTab === 'last_week'
   const isSaved = activeTab === 'saved'
+  const isReturning = activeTab === 'returning'
 
   const { hasToken } = useUserActions()
   const [rawSavedPicks, setRawSavedPicks] = useState([])
@@ -89,6 +91,16 @@ function App() {
   const filteredSimmered = useMemo(() => {
     return searchFilter(simmeredPicks, searchQuery)
   }, [simmeredPicks, searchQuery])
+
+  const filteredReturning = useMemo(() => {
+    return searchFilter(returningPicks, searchQuery)
+  }, [returningPicks, searchQuery])
+
+  const heroReturning =
+    filteredReturning.find((p) => p.backdrop_path || p.poster_path) ||
+    filteredReturning[0] ||
+    null
+  const remainingReturning = demoteImageless(filteredReturning.filter((p) => p !== heroReturning))
 
   // Heroes — mirror the email rule: prefer the highest-ranked pick that has a
   // usable image (backdrop or poster), fall back to the highest-ranked pick
@@ -294,6 +306,60 @@ function App() {
                       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-3 sm:gap-x-4 gap-y-6 sm:gap-y-10">
                         {remainingSimmered.map((pick, i) => (
                           <PickCard key={pick.tmdb_id} pick={pick} isFirstRow={i < FIRST_ROW_COUNT} />
+                        ))}
+                      </div>
+                    </section>
+                  )}
+                </>
+              )}
+            </>
+
+          ) : isReturning ? (
+            /* ═══ NEW SEASONS — RETURNING TV TAB ═══ */
+            <>
+              <div className="flex items-center gap-3 mb-6 sm:mb-8">
+                <div className="h-px flex-1 bg-white/10" />
+                <span className="text-[10px] sm:text-xs uppercase tracking-widest text-cream-300/50">
+                  New seasons of shows you might already love
+                </span>
+                <div className="h-px flex-1 bg-white/10" />
+              </div>
+
+              {filteredReturning.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-20">
+                  <div className="w-16 h-16 rounded-full bg-white/5 border border-white/10 flex items-center justify-center mb-4">
+                    <svg className="w-8 h-8 text-cream-300/20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                  </div>
+                  <p className="text-cream-300/50 text-sm">No new seasons this week.</p>
+                </div>
+              ) : (
+                <>
+                  {heroReturning && (
+                    <section className="mb-8 sm:mb-10">
+                      <PickCard pick={heroReturning} isFeatured hideScores />
+                    </section>
+                  )}
+
+                  {remainingReturning.length > 0 && (
+                    <section>
+                      <div className="flex items-center justify-between mb-4 sm:mb-6">
+                        <div>
+                          <h2 className="font-display text-xl sm:text-2xl font-semibold text-cream-100">
+                            New Seasons
+                          </h2>
+                          <p className="text-xs text-cream-300/40 mt-1">
+                            S2+ premieres airing this week
+                          </p>
+                        </div>
+                        <span className="text-xs text-cream-300/40">
+                          {remainingReturning.length} more
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-3 sm:gap-x-4 gap-y-6 sm:gap-y-10">
+                        {remainingReturning.map((pick, i) => (
+                          <PickCard key={`${pick.tmdb_id}-s${pick.season}`} pick={pick} isFirstRow={i < FIRST_ROW_COUNT} hideScores />
                         ))}
                       </div>
                     </section>

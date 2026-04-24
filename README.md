@@ -4,10 +4,11 @@ A weekly streaming guide ranked by aggregated critic scores — not algorithms.
 
 ## What it does
 
-Two sections, every week:
+Three sections, every week:
 
-- **Fresh Drops** — new releases this week, sorted by buzz. No critic scores yet (they take time to settle), so these are surfaced by interest, not rating.
 - **Top Rated** — releases from the previous **4 weeks** that now have settled IMDb / Rotten Tomatoes / TMDB scores, ranked by a combined score. Up to 10 total titles, including the hero card.
+- **New Seasons** — Season 2+ premieres of existing series airing this week (e.g. *The Pitt* S2, *Euphoria* S3). Sorted by popularity. No scores yet.
+- **Fresh Drops** — new series premieres this week, sorted by buzz. No critic scores yet (they take time to settle), so these are surfaced by interest, not rating.
 
 If fewer than 10 picks have meaningful scores, Top Rated shows fewer than 10. The list is intentionally not padded with unscored or low-confidence titles — quality over count.
 

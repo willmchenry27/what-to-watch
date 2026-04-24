@@ -144,6 +144,81 @@ async function fetchNewTV(dateWindow) {
   }))
 }
 
+async function fetchReturningSeasons(dateWindow) {
+  console.log(`Fetching returning TV seasons airing ${dateWindow.gte} to ${dateWindow.lte}...`)
+
+  const allResults = []
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    const data = await tmdbFetch('/discover/tv', {
+      'air_date.gte': dateWindow.gte,
+      'air_date.lte': dateWindow.lte,
+      'sort_by': 'popularity.desc',
+      'watch_region': 'US',
+      'with_original_language': 'en',
+      'page': page,
+    })
+
+    if (page === 1) console.log(`  Found ${data.total_results} TV shows airing this window`)
+    allResults.push(...data.results)
+    if (page >= data.total_pages) break
+  }
+
+  console.log(`  Filtering ${allResults.length} candidates for season premieres...`)
+
+  const matched = []
+  for (let i = 0; i < allResults.length; i += 5) {
+    const batch = allResults.slice(i, i + 5)
+    const results = await Promise.all(batch.map(async (t) => {
+      try {
+        const detail = await tmdbFetch(`/tv/${t.id}`)
+        const seasons = detail.seasons || []
+        const matchingSeasons = seasons.filter((s) =>
+          s.season_number > 1 &&
+          s.air_date &&
+          s.air_date >= dateWindow.gte &&
+          s.air_date <= dateWindow.lte
+        )
+        if (matchingSeasons.length === 0) return null
+        const matchingSeason = matchingSeasons.sort((a, b) => b.season_number - a.season_number)[0]
+
+        return {
+          tmdb_id: t.id,
+          title: t.name,
+          year: matchingSeason.air_date ? parseInt(matchingSeason.air_date.split('-')[0]) : null,
+          type: 'tv',
+          season: matchingSeason.season_number,
+          genres: (t.genre_ids || []).map((id) => TV_GENRES[id] || 'Other').slice(0, 3),
+          description: matchingSeason.overview || t.overview || null,
+          poster_path: matchingSeason.poster_path
+            ? `${IMG_BASE}/w500${matchingSeason.poster_path}`
+            : (t.poster_path ? `${IMG_BASE}/w500${t.poster_path}` : null),
+          backdrop_path: t.backdrop_path ? `${IMG_BASE}/w1280${t.backdrop_path}` : null,
+          popularity: t.popularity,
+          in_theaters: false,
+          tmdb_vote_average: t.vote_average || null,
+          tmdb_vote_count: t.vote_count || null,
+        }
+      } catch {
+        return null
+      }
+    }))
+    matched.push(...results.filter(Boolean))
+    if (i + 5 < allResults.length) await new Promise((r) => setTimeout(r, 250))
+  }
+
+  console.log(`  ${matched.length} confirmed season premieres (S2+)`)
+
+  const enriched = []
+  for (let i = 0; i < matched.length; i += 5) {
+    const batch = matched.slice(i, i + 5)
+    const results = await Promise.all(batch.map(enrichPick))
+    enriched.push(...results)
+    if (i + 5 < matched.length) await new Promise((r) => setTimeout(r, 250))
+  }
+
+  return enriched
+}
+
 async function fetchCredits(tmdbId, type) {
   try {
     const data = await tmdbFetch(`/${type}/${tmdbId}/credits`)
@@ -284,7 +359,7 @@ async function fetchAllTmdbPicks(overrideDateWindow) {
   return { picks: enriched, week_of: dateWindow.gte }
 }
 
-module.exports = { fetchAllTmdbPicks, getDateWindow, fetchWatchProviders, fetchExternalIds }
+module.exports = { fetchAllTmdbPicks, fetchReturningSeasons, getDateWindow, fetchWatchProviders, fetchExternalIds }
 
 // Run standalone if called directly
 if (require.main === module) {

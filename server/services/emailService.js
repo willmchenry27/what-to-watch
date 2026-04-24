@@ -84,6 +84,7 @@ function buildPickRow(pick, rank, showScore, token) {
 function buildEmailHtml(guide, allPicks, token) {
   const fresh = allPicks.filter((p) => p.cohort === 'fresh')
   const simmered = allPicks.filter((p) => p.cohort === 'simmered')
+  const returning = allPicks.filter((p) => p.cohort === 'returning')
 
   const freshHeroIdx = fresh.findIndex((p) => p.backdrop_path || p.poster_path)
   const freshHero = freshHeroIdx >= 0 ? fresh[freshHeroIdx] : fresh[0]
@@ -151,6 +152,49 @@ function buildEmailHtml(guide, allPicks, token) {
 
   const simRows = simmeredRunners.map((p, i) => buildPickRow(p, i + 2, true, token)).join('')
 
+  // Returning seasons hero + rows (no scores, action links)
+  const returningTop = returning
+    .sort((a, b) => (b.popularity || 0) - (a.popularity || 0))
+    .slice(0, 6)
+  const returningHeroIdx = returningTop.findIndex((p) => p.backdrop_path || p.poster_path)
+  const returningHero = returningHeroIdx >= 0 ? returningTop[returningHeroIdx] : (returningTop[0] || null)
+  const returningRunners = returningTop.filter((p) => p !== returningHero)
+
+  const returningHeroImage = returningHero ? (returningHero.backdrop_path || returningHero.poster_path || '') : ''
+  const returningHeroBlock = returningHero ? `
+    <tr>
+      <td style="padding:0 0 24px;">
+        <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:#111114;border-radius:12px;overflow:hidden;border:1px solid rgba(255,255,255,0.06);">
+          ${returningHeroImage ? `<tr><td><img src="${returningHeroImage}" alt="${returningHero.title}" width="600" style="display:block;width:100%;height:auto;max-height:240px;object-fit:cover;" /></td></tr>` : ''}
+          <tr>
+            <td style="padding:20px 24px;">
+              <p style="margin:0 0 6px;font-size:11px;font-weight:700;color:#c9a84c;text-transform:uppercase;letter-spacing:2px;">Featured New Season</p>
+              <h2 style="margin:0 0 6px;font-size:24px;font-weight:800;color:#f5f0e8;">${tmdbUrl(returningHero) ? `<a href="${tmdbUrl(returningHero)}" style="color:#f5f0e8;text-decoration:none;">${returningHero.title}</a>` : returningHero.title}${returningHero.season ? ` <span style="color:#888;font-weight:600;">S${returningHero.season}</span>` : ''}</h2>
+              <p style="margin:0 0 10px;font-size:13px;color:#888;">${(returningHero.genres || []).join(', ')}${returningHero.platform ? ' &middot; ' + returningHero.platform : ''}</p>
+              ${returningHero.description ? `<p style="margin:0 0 10px;font-size:13px;line-height:1.5;color:#aaa;">${returningHero.description.slice(0, 200)}${returningHero.description.length > 200 ? '...' : ''}</p>` : ''}
+              ${actionLinks(returningHero, token)}
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>` : ''
+
+  const returningRows = returningRunners.map((p, i) => buildPickRow(p, i + 2, false, token)).join('')
+
+  const returningSection = returningTop.length > 0 ? `
+    <!-- New Seasons Header -->
+    <tr>
+      <td style="padding:0 0 16px;">
+        <h3 style="margin:0 0 4px;font-size:14px;font-weight:700;color:#f5f0e8;text-transform:uppercase;letter-spacing:1px;">New Seasons</h3>
+        <p style="margin:0;font-size:12px;color:#555;">S2+ premieres airing this week</p>
+      </td>
+    </tr>
+
+    ${returningHeroBlock}
+
+    ${returningRows ? `<tr><td><table width="100%" cellpadding="0" cellspacing="0" role="presentation">${returningRows}</table></td></tr>` : ''}
+  ` : ''
+
   // Open app CTA (bootstraps web session with token)
   const appUrl = process.env.APP_URL || 'http://localhost:3001'
   const openAppHref = `${appUrl}/?r=${encodeURIComponent(token)}`
@@ -199,6 +243,8 @@ function buildEmailHtml(guide, allPicks, token) {
           </tr>
 
           ${simmeredSection}
+
+          ${returningSection}
 
           <!-- Fresh Drops Header -->
           <tr>

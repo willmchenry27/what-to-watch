@@ -1,6 +1,6 @@
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') })
 
-const { fetchAllTmdbPicks, getDateWindow, fetchWatchProviders, fetchExternalIds } = require('./fetchTmdb')
+const { fetchAllTmdbPicks, fetchReturningSeasons, getDateWindow, fetchWatchProviders, fetchExternalIds } = require('./fetchTmdb')
 const { enrichWithOmdbScores } = require('./fetchOmdb')
 const { getDb } = require('../db/schema')
 
@@ -123,7 +123,7 @@ async function loadSimmeredCandidates() {
   }))
 }
 
-async function saveToDatabase(weekOf, freshPicks, simmeredPicks) {
+async function saveToDatabase(weekOf, freshPicks, simmeredPicks, returningPicks = []) {
   const db = await getDb()
   const guideId = `guide-${weekOf}`
 
@@ -148,6 +148,7 @@ async function saveToDatabase(weekOf, freshPicks, simmeredPicks) {
     { sql: 'DELETE FROM picks WHERE guide_id = ?', args: [guideId] },
     ...freshPicks.map((p) => ({ sql: pickSql, args: pickArgs(p, 'fresh') })),
     ...simmeredPicks.map((p) => ({ sql: pickSql, args: pickArgs(p, 'simmered') })),
+    ...returningPicks.map((p) => ({ sql: pickSql, args: pickArgs(p, 'returning') })),
   ]
 
   await db.batch(statements, 'write')
@@ -189,6 +190,33 @@ async function generateGuide() {
   console.log(`\n  Fresh Drops: ${freshPicks.length} titles (ranked by TMDB popularity)`)
   for (const p of freshPicks.slice(0, 5)) {
     console.log(`    #${p.rank} ${p.title} (${p.year}) — popularity ${p.popularity?.toFixed(1)}`)
+  }
+
+  // ── RETURNING SEASONS: New seasons (S2+) of existing series airing this week ──
+  console.log('\nStep 1.5: Fetching RETURNING SEASONS from TMDB...')
+  let returningPicks = []
+  try {
+    const dw = getDateWindow()
+    const returningRaw = await fetchReturningSeasons(dw)
+    const freshTmdbIds = new Set(freshPicks.map((p) => p.tmdb_id))
+    returningPicks = returningRaw
+      .filter(isFreshDropCandidate)
+      .filter((p) => !freshTmdbIds.has(p.tmdb_id))
+      .sort((a, b) => (b.popularity || 0) - (a.popularity || 0))
+      .map((p, i) => ({
+        ...p,
+        rank: i + 1,
+        imdb_score: null,
+        rt_score: null,
+        combined_score: null,
+      }))
+    console.log(`  Returning Seasons: ${returningPicks.length} titles`)
+    for (const p of returningPicks.slice(0, 5)) {
+      console.log(`    #${p.rank} ${p.title} S${p.season} (${p.year}) — popularity ${p.popularity?.toFixed(1)}`)
+    }
+  } catch (err) {
+    console.error('PIPELINE WARNING: Returning seasons fetch failed:', err.message)
+    errors.push(`Returning seasons: ${err.message}`)
   }
 
   // ── SIMMERED PICKS: Last 4 weeks' releases, now scored ──
@@ -295,9 +323,9 @@ async function generateGuide() {
 
   // ── SAVE ──
   console.log('\nStep 4: Saving to database...')
-  const guideId = await saveToDatabase(week_of, freshPicks, simmeredPicks)
-  const total = freshPicks.length + simmeredPicks.length
-  console.log(`Saved ${total} picks (${freshPicks.length} fresh + ${simmeredPicks.length} simmered) as ${guideId}`)
+  const guideId = await saveToDatabase(week_of, freshPicks, simmeredPicks, returningPicks)
+  const total = freshPicks.length + simmeredPicks.length + returningPicks.length
+  console.log(`Saved ${total} picks (${freshPicks.length} fresh + ${simmeredPicks.length} simmered + ${returningPicks.length} returning) as ${guideId}`)
 
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
   if (errors.length > 0) {

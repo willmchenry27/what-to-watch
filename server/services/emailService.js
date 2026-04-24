@@ -251,6 +251,9 @@ async function sendWeeklyEmailToRecipient(guide, allPicks, recipientEmail) {
 
   const resend = new Resend(process.env.RESEND_API_KEY)
   const { data, error } = await resend.emails.send({
+    // TODO: onboarding@resend.dev only allows sending to the account owner's email.
+    // To send to multiple recipients, verify a domain at resend.com/domains and
+    // change this to: 'What to Watch <hello@your-verified-domain.com>'
     from: 'onboarding@resend.dev',
     to: recipient,
     subject: `What to Watch This Friday — ${heroTitle}`,
@@ -259,7 +262,7 @@ async function sendWeeklyEmailToRecipient(guide, allPicks, recipientEmail) {
 
   if (error) throw new Error(`Resend error: ${JSON.stringify(error)}`)
 
-  console.log(`Email sent to ${recipient} (id: ${data.id})`)
+  console.log(`Email sent (id: ${data.id})`)
   return data
 }
 

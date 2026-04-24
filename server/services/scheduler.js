@@ -55,7 +55,7 @@ async function runPipeline({ sendEmail = true } = {}) {
 
     const { guide, picks } = await loadGuideData(guideId)
 
-    console.log(`\nSending to ${recipients.length} recipient(s): ${recipients.join(', ')}`)
+    console.log(`\nSending to ${recipients.length} recipient(s)`)
     for (const recipient of recipients) {
       const hiddenIds = await getHiddenTmdbIdsForRecipient(recipient)
       const unseen = picks.filter((p) => !hiddenIds.has(p.tmdb_id))

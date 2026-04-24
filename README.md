@@ -20,7 +20,15 @@ Two GitHub Actions workflows handle production scheduling:
 | `.github/workflows/weekly-guide.yml` | Friday 2 PM ET | Generates the guide and sends a personalized email to every recipient in `NOTIFICATION_EMAIL`. |
 | `.github/workflows/midweek-refresh.yml` | Tuesday 2 PM ET | Refreshes the guide in the database (so the website is current) without sending any email. |
 
-GitHub Actions is the production scheduler. The Express backend has an in-process cron, but it's **off by default** — set `ENABLE_INTERNAL_SCHEDULER=true` to opt in. This avoids accidental duplicate sends if you ever run `node server/index.js` standalone alongside Actions.
+GitHub Actions is the **only** production scheduler. The Express backend has an in-process cron (`server/services/scheduler.js`), but it's **off by default** and intended for local dev only. In Railway (or any hosted deployment), `ENABLE_INTERNAL_SCHEDULER` must be **unset or `false`** — if both Railway and GitHub Actions run simultaneously, recipients get duplicate emails, potentially from stale deployed code.
+
+### Resend sender address
+
+The email sender is currently `onboarding@resend.dev`, which only allows sending to the Resend account owner's email. To send to additional recipients:
+
+1. Verify a domain at [resend.com/domains](https://resend.com/domains).
+2. Update `from` in `server/services/emailService.js` to `What to Watch <hello@your-verified-domain.com>`.
+3. Update `NOTIFICATION_EMAIL` in GitHub Actions secrets to include all recipients.
 
 ## Recipient-scoped state
 

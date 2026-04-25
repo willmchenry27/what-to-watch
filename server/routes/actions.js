@@ -1,6 +1,7 @@
 const express = require('express')
 const { getDb } = require('../db/schema')
 const { verifyRecipientToken } = require('../lib/recipientToken')
+const { appUrlWithRecipientToken, getEmailPublicUrls } = require('../lib/publicUrls')
 
 const router = express.Router()
 
@@ -165,11 +166,10 @@ router.get('/:action_type/:tmdb_id', async (req, res) => {
     dismiss: "Got it — we'll hide this from your future emails.",
     save: 'Saved to your pull list.',
   }
-  const apiBase = process.env.API_PUBLIC_URL || process.env.APP_URL || 'http://localhost:3001'
-  const appUrl = process.env.APP_URL || 'http://localhost:3001'
+  const { apiPublicUrl, appUrl } = getEmailPublicUrls()
   const token = encodeURIComponent(req.query.r)
-  const undoUrl = `${apiBase}/api/actions/undo/${action_type}/${tmdb_id}?r=${token}`
-  const openAppUrl = `${appUrl}/?r=${token}`
+  const undoUrl = `${apiPublicUrl}/api/actions/undo/${action_type}/${tmdb_id}?r=${token}`
+  const openAppUrl = appUrlWithRecipientToken(appUrl, req.query.r)
 
   res.send(confirmationHtml(
     `${labels[action_type]}: ${displayTitle}`,
@@ -207,9 +207,8 @@ router.get('/undo/:action_type/:tmdb_id', async (req, res) => {
   const undoMessage = action_type === 'save'
     ? 'Removed from your saved list.'
     : 'This title will appear in your future emails again.'
-  const appUrl = process.env.APP_URL || 'http://localhost:3001'
-  const token = encodeURIComponent(req.query.r)
-  const openAppUrl = `${appUrl}/?r=${token}`
+  const { appUrl } = getEmailPublicUrls()
+  const openAppUrl = appUrlWithRecipientToken(appUrl, req.query.r)
 
   res.send(confirmationHtml(
     `Restored: ${displayTitle}`,

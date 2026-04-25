@@ -2,6 +2,7 @@ require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') }
 
 const { Resend } = require('resend')
 const { signRecipientToken, normalizeEmail } = require('../lib/recipientToken')
+const { appUrlWithRecipientToken, getEmailPublicUrls } = require('../lib/publicUrls')
 
 function parseRecipients(raw) {
   if (!raw) return []
@@ -29,6 +30,8 @@ function validateEmailEnv() {
   if (missing.length > 0) {
     throw new Error(`Missing or invalid required env vars: ${missing.join(', ')}`)
   }
+
+  getEmailPublicUrls()
 }
 
 function scoreColor(value) {
@@ -44,10 +47,10 @@ function tmdbUrl(pick) {
 }
 
 function actionLinks(pick, token) {
-  const apiBase = process.env.API_PUBLIC_URL || process.env.APP_URL || 'http://localhost:3001'
+  const { apiPublicUrl } = getEmailPublicUrls()
   const t = encodeURIComponent(token)
   const linkStyle = 'color:#999;font-size:11px;text-decoration:none;'
-  return `<div style="margin-top:10px;"><a href="${apiBase}/api/actions/seen/${pick.tmdb_id}?r=${t}" style="${linkStyle}">Seen it</a> &nbsp;&nbsp;&middot;&nbsp;&nbsp; <a href="${apiBase}/api/actions/dismiss/${pick.tmdb_id}?r=${t}" style="${linkStyle}">Not for me</a> &nbsp;&nbsp;&middot;&nbsp;&nbsp; <a href="${apiBase}/api/actions/save/${pick.tmdb_id}?r=${t}" style="${linkStyle}">Save it</a></div>`
+  return `<div style="margin-top:10px;"><a href="${apiPublicUrl}/api/actions/seen/${pick.tmdb_id}?r=${t}" style="${linkStyle}">Seen it</a> &nbsp;&nbsp;&middot;&nbsp;&nbsp; <a href="${apiPublicUrl}/api/actions/dismiss/${pick.tmdb_id}?r=${t}" style="${linkStyle}">Not for me</a> &nbsp;&nbsp;&middot;&nbsp;&nbsp; <a href="${apiPublicUrl}/api/actions/save/${pick.tmdb_id}?r=${t}" style="${linkStyle}">Save it</a></div>`
 }
 
 function buildPickRow(pick, rank, showScore, token) {
@@ -82,6 +85,7 @@ function buildPickRow(pick, rank, showScore, token) {
 }
 
 function buildEmailHtml(guide, allPicks, token) {
+  const { appUrl } = getEmailPublicUrls()
   const fresh = allPicks.filter((p) => p.cohort === 'fresh')
   const simmered = allPicks.filter((p) => p.cohort === 'simmered')
   const returning = allPicks.filter((p) => p.cohort === 'returning')
@@ -196,8 +200,7 @@ function buildEmailHtml(guide, allPicks, token) {
   ` : ''
 
   // Open app CTA (bootstraps web session with token)
-  const appUrl = process.env.APP_URL || 'http://localhost:3001'
-  const openAppHref = `${appUrl}/?r=${encodeURIComponent(token)}`
+  const openAppHref = appUrlWithRecipientToken(appUrl, token)
 
   // Simmered section (only if we have scored content)
   const shortNote = simmeredTop.length > 0 && simmeredTop.length < 10

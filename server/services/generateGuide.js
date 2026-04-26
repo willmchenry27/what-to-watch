@@ -1,11 +1,13 @@
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') })
 
-const { fetchAllTmdbPicks, fetchReturningSeasons, getDateWindow, fetchWatchProviders, fetchExternalIds } = require('./fetchTmdb')
+const { fetchAllTmdbPicks, fetchReturningSeasons, fetchSeasonRating, getDateWindow, fetchWatchProviders, fetchExternalIds } = require('./fetchTmdb')
 const { enrichWithOmdbScores } = require('./fetchOmdb')
 const { getDb } = require('../db/schema')
 
 const MIN_TMDB_VOTES = 5
 const SIMMER_WEEKS = 4
+const RETURNING_WEEKS = 12
+const SEASON_VOTES_THRESHOLD = 50
 
 function calculateCombinedScore(imdbScore, rtScore, tmdbVoteAverage, tmdbVoteCount) {
   const normalizedImdb = imdbScore ? imdbScore * 10 : null
@@ -15,11 +17,43 @@ function calculateCombinedScore(imdbScore, rtScore, tmdbVoteAverage, tmdbVoteCou
   }
   if (normalizedImdb !== null) return Math.round(normalizedImdb)
   if (normalizedRt !== null) return Math.round(normalizedRt)
-  // Fallback to TMDB vote_average only if enough votes to be meaningful
   if (tmdbVoteAverage && (tmdbVoteCount || 0) >= MIN_TMDB_VOTES) {
     return Math.round(tmdbVoteAverage * 10)
   }
   return null
+}
+
+async function scoreReturningPick(pick) {
+  let seasonRating = { vote_average: null, vote_count: 0 }
+  if (pick.tmdb_id && pick.season) {
+    seasonRating = await fetchSeasonRating(pick.tmdb_id, pick.season)
+  }
+  const seasonVoteAverage = seasonRating.vote_average
+  const seasonVoteCount = seasonRating.vote_count
+
+  if (seasonVoteCount >= SEASON_VOTES_THRESHOLD && seasonVoteAverage != null) {
+    return {
+      ...pick,
+      season_vote_average: seasonVoteAverage,
+      season_vote_count: seasonVoteCount,
+      combined_score: Math.round(seasonVoteAverage * 10),
+      score_source: 'season',
+    }
+  }
+
+  const seriesScore = calculateCombinedScore(
+    pick.imdb_score,
+    pick.rt_score,
+    pick.tmdb_vote_average,
+    pick.tmdb_vote_count,
+  )
+  return {
+    ...pick,
+    season_vote_average: seasonVoteAverage,
+    season_vote_count: seasonVoteCount,
+    combined_score: seriesScore,
+    score_source: seriesScore != null ? 'series' : null,
+  }
 }
 
 function hasUsableImage(p) {
@@ -55,16 +89,20 @@ function rankPicks(picks) {
     .map((p, i) => ({ ...p, rank: i + 1 }))
 }
 
-function getSimmeredGuideIds() {
+function getPastGuideIds(weeks) {
   const dw = getDateWindow()
   const fmt = (d) => d.toISOString().split('T')[0]
   const ids = []
-  for (let w = 1; w <= SIMMER_WEEKS; w++) {
+  for (let w = 1; w <= weeks; w++) {
     const sat = new Date(dw.gte + 'T00:00:00')
     sat.setDate(sat.getDate() - (w * 7))
     ids.push(`guide-${fmt(sat)}`)
   }
   return ids
+}
+
+function getSimmeredGuideIds() {
+  return getPastGuideIds(SIMMER_WEEKS)
 }
 
 async function loadSimmeredCandidates() {
@@ -123,12 +161,64 @@ async function loadSimmeredCandidates() {
   }))
 }
 
+async function loadReturningCandidates() {
+  const db = await getDb()
+  const guideIds = getPastGuideIds(RETURNING_WEEKS)
+
+  const allRows = []
+  for (const guideId of guideIds) {
+    const result = await db.execute({
+      sql: "SELECT * FROM picks WHERE guide_id = ? AND cohort = 'returning' ORDER BY rank ASC",
+      args: [guideId],
+    })
+    if (result.rows.length > 0) {
+      console.log(`  Found ${result.rows.length} returning picks from ${guideId}`)
+      allRows.push(...result.rows)
+    }
+  }
+
+  if (allRows.length === 0) return []
+
+  // Dedup by (tmdb_id, season) — keep the newer row (older guide IDs come last)
+  const seen = new Map()
+  for (const row of allRows) {
+    const key = `${row.tmdb_id}-${row.season}`
+    if (!seen.has(key)) seen.set(key, row)
+  }
+  const deduped = [...seen.values()]
+  const dupes = allRows.length - deduped.length
+  if (dupes > 0) console.log(`  Deduped: removed ${dupes} returning picks across weeks`)
+  console.log(`  Total returning candidates to re-score: ${deduped.length}`)
+
+  return deduped.map((p) => ({
+    tmdb_id: p.tmdb_id,
+    imdb_id: p.imdb_id || null,
+    title: p.title,
+    year: p.year,
+    type: p.type,
+    season: p.season,
+    genres: JSON.parse(p.genres),
+    description: p.description,
+    platform: p.platform,
+    platform_slug: p.platform_slug,
+    availability: p.availability,
+    poster_path: p.poster_path,
+    backdrop_path: p.backdrop_path,
+    cast: JSON.parse(p.cast_list),
+    director: p.director,
+    in_theaters: Boolean(p.in_theaters),
+    popularity: 0,
+    tmdb_vote_average: p.tmdb_vote_average,
+    tmdb_vote_count: p.tmdb_vote_count,
+  }))
+}
+
 async function saveToDatabase(weekOf, freshPicks, simmeredPicks, returningPicks = []) {
   const db = await getDb()
   const guideId = `guide-${weekOf}`
 
-  const pickSql = `INSERT INTO picks (guide_id, rank, tmdb_id, imdb_id, title, year, type, season, genres, description, imdb_score, rt_score, combined_score, platform, platform_slug, availability, poster_path, backdrop_path, cast_list, director, in_theaters, cohort, tmdb_vote_average, tmdb_vote_count)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  const pickSql = `INSERT INTO picks (guide_id, rank, tmdb_id, imdb_id, title, year, type, season, genres, description, imdb_score, rt_score, combined_score, platform, platform_slug, availability, poster_path, backdrop_path, cast_list, director, in_theaters, cohort, tmdb_vote_average, tmdb_vote_count, season_vote_average, season_vote_count, score_source)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
   function pickArgs(p, cohort) {
     return [
@@ -140,6 +230,7 @@ async function saveToDatabase(weekOf, freshPicks, simmeredPicks, returningPicks 
       JSON.stringify(p.cast || []), p.director || null,
       p.in_theaters ? 1 : 0, cohort,
       p.tmdb_vote_average ?? null, p.tmdb_vote_count ?? null,
+      p.season_vote_average ?? null, p.season_vote_count ?? null, p.score_source ?? null,
     ]
   }
 
@@ -192,30 +283,90 @@ async function generateGuide() {
     console.log(`    #${p.rank} ${p.title} (${p.year}) — popularity ${p.popularity?.toFixed(1)}`)
   }
 
-  // ── RETURNING SEASONS: New seasons (S2+) of existing series airing this week ──
+  // ── RETURNING SEASONS: New seasons (S2+) airing this week + past 12 weeks of tracked picks ──
   console.log('\nStep 1.5: Fetching RETURNING SEASONS from TMDB...')
   let returningPicks = []
   try {
     const dw = getDateWindow()
-    const returningRaw = await fetchReturningSeasons(dw)
     const freshTmdbIds = new Set(freshPicks.map((p) => p.tmdb_id))
-    returningPicks = returningRaw
+
+    // (a) New season premieres airing this week
+    const returningRaw = await fetchReturningSeasons(dw)
+    const newReturning = returningRaw
       .filter(isFreshDropCandidate)
       .filter((p) => !freshTmdbIds.has(p.tmdb_id))
-      .sort((a, b) => (b.popularity || 0) - (a.popularity || 0))
-      .map((p, i) => ({
-        ...p,
-        rank: i + 1,
-        imdb_score: null,
-        rt_score: null,
-        combined_score: null,
-      }))
-    console.log(`  Returning Seasons: ${returningPicks.length} titles`)
+    console.log(`  This week's new season premieres: ${newReturning.length}`)
+
+    // (b) Past 12 weeks of tracked returning picks
+    console.log('\nStep 1.6: Loading past returning picks for weekly re-scoring...')
+    const pastReturning = await loadReturningCandidates()
+
+    // (c) Merge new + past, dedup by (tmdb_id, season), prefer the newer entry
+    const merged = new Map()
+    for (const p of newReturning) merged.set(`${p.tmdb_id}-${p.season}`, p)
+    for (const p of pastReturning) {
+      const key = `${p.tmdb_id}-${p.season}`
+      if (!merged.has(key)) merged.set(key, p)
+    }
+    const allReturning = [...merged.values()].filter((p) => !freshTmdbIds.has(p.tmdb_id))
+
+    // (d) Refresh providers for the merged set (covers both new and past)
+    if (allReturning.length > 0) {
+      console.log(`  Refreshing providers for ${allReturning.length} returning picks...`)
+      for (let i = 0; i < allReturning.length; i += 5) {
+        const batch = allReturning.slice(i, i + 5)
+        await Promise.all(batch.map(async (p) => {
+          const providers = await fetchWatchProviders(p.tmdb_id, p.type)
+          p.platform = providers.platform
+          p.platform_slug = providers.platform_slug
+          p.availability = providers.availability
+        }))
+        if (i + 5 < allReturning.length) await new Promise((r) => setTimeout(r, 250))
+      }
+    }
+
+    // (e) Drop in-theaters/no-platform picks AFTER provider refresh
+    const filteredReturning = allReturning.filter((p) => !p.in_theaters || p.platform)
+
+    // (f) OMDb-enrich the merged set ONCE so both new and past picks get series-level scores
+    let omdbEnriched = filteredReturning
+    if (filteredReturning.length > 0) {
+      console.log(`  Fetching OMDb series-level scores for ${filteredReturning.length} returning picks...`)
+      try {
+        omdbEnriched = await enrichWithOmdbScores(filteredReturning)
+      } catch (err) {
+        console.error('  PIPELINE WARNING: OMDb enrich for returning failed:', err.message)
+        errors.push(`OMDb enrich (returning): ${err.message}`)
+      }
+    }
+
+    // (g) Score each via shared helper (series-level OMDb + season-level TMDB)
+    console.log(`  Scoring ${omdbEnriched.length} returning picks...`)
+    const scored = []
+    for (let i = 0; i < omdbEnriched.length; i += 5) {
+      const batch = omdbEnriched.slice(i, i + 5)
+      const results = await Promise.all(batch.map(scoreReturningPick))
+      scored.push(...results)
+      if (i + 5 < omdbEnriched.length) await new Promise((r) => setTimeout(r, 250))
+    }
+
+    returningPicks = scored
+      .sort((a, b) => {
+        const aScore = a.combined_score ?? -1
+        const bScore = b.combined_score ?? -1
+        if (aScore !== bScore) return bScore - aScore
+        return (b.popularity || 0) - (a.popularity || 0)
+      })
+      .map((p, i) => ({ ...p, rank: i + 1 }))
+
+    console.log(`  Returning Seasons: ${returningPicks.length} titles total`)
     for (const p of returningPicks.slice(0, 5)) {
-      console.log(`    #${p.rank} ${p.title} S${p.season} (${p.year}) — popularity ${p.popularity?.toFixed(1)}`)
+      const score = p.combined_score != null ? p.combined_score : 'unscored'
+      const src = p.score_source ? ` (${p.score_source})` : ''
+      console.log(`    #${p.rank} ${p.title} S${p.season} — ${score}${src}`)
     }
   } catch (err) {
-    console.error('PIPELINE WARNING: Returning seasons fetch failed:', err.message)
+    console.error('PIPELINE WARNING: Returning seasons step failed:', err.message)
     errors.push(`Returning seasons: ${err.message}`)
   }
 
@@ -309,15 +460,18 @@ async function generateGuide() {
     console.log('  No previous week data — skipping simmered cohort.')
   }
 
-  // ── CROSS-COHORT DEDUP: Remove fresh picks that already appear in simmered ──
-  if (simmeredPicks.length > 0) {
-    const simmeredTmdbIds = new Set(simmeredPicks.map((p) => p.tmdb_id))
+  // ── CROSS-COHORT DEDUP: Remove fresh picks that appear in simmered or returning ──
+  if (simmeredPicks.length > 0 || returningPicks.length > 0) {
+    const blockedTmdbIds = new Set([
+      ...simmeredPicks.map((p) => p.tmdb_id),
+      ...returningPicks.map((p) => p.tmdb_id),
+    ])
     const freshBefore = freshPicks.length
     freshPicks = freshPicks
-      .filter((p) => !simmeredTmdbIds.has(p.tmdb_id))
+      .filter((p) => !blockedTmdbIds.has(p.tmdb_id))
       .map((p, i) => ({ ...p, rank: i + 1 }))
     if (freshPicks.length < freshBefore) {
-      console.log(`  Cross-cohort dedup: removed ${freshBefore - freshPicks.length} fresh picks already in simmered`)
+      console.log(`  Cross-cohort dedup: removed ${freshBefore - freshPicks.length} fresh picks already in simmered/returning`)
     }
   }
 

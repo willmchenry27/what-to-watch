@@ -5,7 +5,7 @@ import ActionButtons from './ActionButtons'
 
 export default function PickCard({ pick, isFeatured = false, isFirstRow = false, hideScores = false, onAction }) {
   const {
-    title, year, season, genres, platform, availability, poster_path, backdrop_path,
+    title, year, genres, platform, availability, poster_path, backdrop_path,
     imdb_score, rt_score, combined_score, rank, tmdb_id, type,
     cast, director, description,
   } = pick
@@ -21,7 +21,6 @@ export default function PickCard({ pick, isFeatured = false, isFirstRow = false,
     const titleBlock = (
       <h3 className="font-display text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-cream-100 mb-2 sm:drop-shadow-lg line-clamp-2">
         {titleUrl ? <a href={titleUrl} target="_blank" rel="noopener noreferrer" className="hover:text-gold-400 transition-colors">{title}</a> : title}
-        {season && <span className="text-xl text-cream-300/60 font-normal ml-3">S{season}</span>}
       </h3>
     )
 
@@ -160,7 +159,6 @@ export default function PickCard({ pick, isFeatured = false, isFirstRow = false,
       <div className="p-3.5">
         <h3 className="font-display text-base font-semibold text-cream-100 mb-0.5 truncate">
           {titleUrl ? <a href={titleUrl} target="_blank" rel="noopener noreferrer" className="hover:text-gold-400 transition-colors">{title}</a> : title}
-          {season && <span className="text-sm text-cream-300/50 font-normal ml-1">S{season}</span>}
         </h3>
 
         <div className="flex items-center gap-1.5 text-xs text-cream-300/70 mb-2.5 flex-wrap">

@@ -82,6 +82,15 @@ async function migrate() {
   if (!cols.find((c) => c.name === 'imdb_id')) {
     stmts.push('ALTER TABLE picks ADD COLUMN imdb_id TEXT')
   }
+  if (!cols.find((c) => c.name === 'season_vote_average')) {
+    stmts.push('ALTER TABLE picks ADD COLUMN season_vote_average REAL')
+  }
+  if (!cols.find((c) => c.name === 'season_vote_count')) {
+    stmts.push('ALTER TABLE picks ADD COLUMN season_vote_count INTEGER')
+  }
+  if (!cols.find((c) => c.name === 'score_source')) {
+    stmts.push('ALTER TABLE picks ADD COLUMN score_source TEXT')
+  }
 
   // Drop legacy user_actions table if it exists — data is unscoped and cannot be
   // safely mapped to recipients

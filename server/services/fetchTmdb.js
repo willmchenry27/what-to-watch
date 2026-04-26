@@ -288,6 +288,28 @@ async function fetchWatchProviders(tmdbId, type) {
   }
 }
 
+async function fetchSeasonRating(tmdbId, seasonNumber) {
+  try {
+    const data = await tmdbFetch(`/tv/${tmdbId}/season/${seasonNumber}`)
+    if (typeof data.vote_average === 'number' && typeof data.vote_count === 'number' && data.vote_count > 0) {
+      return { vote_average: data.vote_average, vote_count: data.vote_count }
+    }
+    const episodes = Array.isArray(data.episodes) ? data.episodes : []
+    let totalScore = 0
+    let totalCount = 0
+    for (const ep of episodes) {
+      if (typeof ep.vote_average === 'number' && typeof ep.vote_count === 'number' && ep.vote_count > 0) {
+        totalScore += ep.vote_average * ep.vote_count
+        totalCount += ep.vote_count
+      }
+    }
+    if (totalCount === 0) return { vote_average: null, vote_count: 0 }
+    return { vote_average: totalScore / totalCount, vote_count: totalCount }
+  } catch {
+    return { vote_average: null, vote_count: 0 }
+  }
+}
+
 async function fetchExternalIds(tmdbId, type) {
   try {
     const data = await tmdbFetch(`/${type}/${tmdbId}/external_ids`)
@@ -359,7 +381,7 @@ async function fetchAllTmdbPicks(overrideDateWindow) {
   return { picks: enriched, week_of: dateWindow.gte }
 }
 
-module.exports = { fetchAllTmdbPicks, fetchReturningSeasons, getDateWindow, fetchWatchProviders, fetchExternalIds }
+module.exports = { fetchAllTmdbPicks, fetchReturningSeasons, fetchSeasonRating, getDateWindow, fetchWatchProviders, fetchExternalIds }
 
 // Run standalone if called directly
 if (require.main === module) {

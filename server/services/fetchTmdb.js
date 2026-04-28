@@ -268,7 +268,18 @@ async function fetchWatchProviders(tmdbId, type) {
   try {
     const data = await tmdbFetch(`/${type}/${tmdbId}/watch/providers`)
     const us = data.results?.US
-    if (!us) return emptyProviderResult()
+    if (!us) {
+      if (type === 'tv') {
+        try {
+          const detail = await tmdbFetch(`/tv/${tmdbId}`)
+          const networkName = detail.networks?.[0]?.name
+          if (networkName) {
+            return { platform: networkName, platform_slug: null, availability: 'network' }
+          }
+        } catch { /* tolerate detail fetch failure */ }
+      }
+      return emptyProviderResult()
+    }
 
     const streaming = pickProvider(us.flatrate || [], STREAMING_PRIORITY)
     if (streaming) return { ...streaming, availability: 'streaming' }

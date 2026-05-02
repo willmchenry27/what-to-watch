@@ -72,7 +72,7 @@ function buildPickRow(pick, rank, showScore, token) {
               <span style="display:inline-block;width:32px;height:32px;line-height:32px;text-align:center;border-radius:50%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:#c9a84c;font-weight:700;font-size:13px;">#${rank}</span>
             </td>
             <td style="vertical-align:top;">
-              <div style="font-size:16px;font-weight:700;color:#f5f0e8;margin-bottom:4px;">${tmdbUrl(pick) ? `<a href="${tmdbUrl(pick)}" style="color:#f5f0e8;text-decoration:none;">${pick.title}</a>` : pick.title}</div>
+              <div style="font-size:16px;font-weight:700;color:#f5f0e8;margin-bottom:4px;">${tmdbUrl(pick) ? `<a href="${tmdbUrl(pick)}" style="color:#f5f0e8;text-decoration:none;">${pick.title}</a>` : pick.title}${pick.season ? ` <span style="color:#888;font-weight:600;">S${pick.season}</span>` : ''}</div>
               <div style="font-size:12px;color:#888;margin-bottom:${scores ? '6' : '0'}px;">${(pick.genres || []).slice(0, 3).join(', ')} ${platform ? '&nbsp;&middot;&nbsp;' + platform : ''}</div>
               ${scores ? `<div style="font-size:12px;color:#999;">${scores}</div>` : ''}
               ${actionLinks(pick, token)}
@@ -120,7 +120,7 @@ function buildEmailHtml(guide, allPicks, token) {
           <tr>
             <td style="padding:20px 24px;">
               <p style="margin:0 0 6px;font-size:11px;font-weight:700;color:#c9a84c;text-transform:uppercase;letter-spacing:2px;">Featured Fresh Drop</p>
-              <h2 style="margin:0 0 6px;font-size:24px;font-weight:800;color:#f5f0e8;">${tmdbUrl(freshHero) ? `<a href="${tmdbUrl(freshHero)}" style="color:#f5f0e8;text-decoration:none;">${freshHero.title}</a>` : freshHero.title}</h2>
+              <h2 style="margin:0 0 6px;font-size:24px;font-weight:800;color:#f5f0e8;">${tmdbUrl(freshHero) ? `<a href="${tmdbUrl(freshHero)}" style="color:#f5f0e8;text-decoration:none;">${freshHero.title}</a>` : freshHero.title}${freshHero.season ? ` <span style="color:#888;font-weight:600;">S${freshHero.season}</span>` : ''}</h2>
               <p style="margin:0 0 10px;font-size:13px;color:#888;">${(freshHero.genres || []).join(', ')}${freshHero.platform ? ' &middot; ' + freshHero.platform : ''}</p>
               ${freshHero.description ? `<p style="margin:0 0 10px;font-size:13px;line-height:1.5;color:#aaa;">${freshHero.description.slice(0, 200)}${freshHero.description.length > 200 ? '...' : ''}</p>` : ''}
               ${actionLinks(freshHero, token)}
@@ -149,7 +149,7 @@ function buildEmailHtml(guide, allPicks, token) {
           <tr>
             <td style="padding:20px 24px;">
               <p style="margin:0 0 6px;font-size:11px;font-weight:700;color:#c9a84c;text-transform:uppercase;letter-spacing:2px;">Featured Top Rated</p>
-              <h2 style="margin:0 0 6px;font-size:24px;font-weight:800;color:#f5f0e8;">${tmdbUrl(simmeredHero) ? `<a href="${tmdbUrl(simmeredHero)}" style="color:#f5f0e8;text-decoration:none;">${simmeredHero.title}</a>` : simmeredHero.title}</h2>
+              <h2 style="margin:0 0 6px;font-size:24px;font-weight:800;color:#f5f0e8;">${tmdbUrl(simmeredHero) ? `<a href="${tmdbUrl(simmeredHero)}" style="color:#f5f0e8;text-decoration:none;">${simmeredHero.title}</a>` : simmeredHero.title}${simmeredHero.season ? ` <span style="color:#888;font-weight:600;">S${simmeredHero.season}</span>` : ''}</h2>
               <p style="margin:0 0 10px;font-size:13px;color:#888;">${(simmeredHero.genres || []).join(', ')}${simmeredHero.platform ? ' &middot; ' + simmeredHero.platform : ''}</p>
               <div style="margin:0 0 12px;">${simScoreHtml}${simImdb}${simRt}${simTmdb}</div>
               ${simmeredHero.description ? `<p style="margin:0 0 10px;font-size:13px;line-height:1.5;color:#aaa;">${simmeredHero.description.slice(0, 200)}${simmeredHero.description.length > 200 ? '...' : ''}</p>` : ''}

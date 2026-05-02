@@ -204,11 +204,9 @@ function buildEmailHtml(guide, allPicks, token) {
               <h1 style="margin:0;font-size:28px;font-weight:800;color:#f5f0e8;letter-spacing:-0.5px;">What to Watch</h1>
               <p style="margin:6px 0 0;font-size:16px;font-style:italic;color:#c9a84c;">This Friday</p>
               <p style="margin:8px 0 0;font-size:12px;color:#666;text-transform:uppercase;letter-spacing:2px;">Week of ${guide.week_of}</p>
-              <p style="margin:14px 0 0;font-size:12px;color:#888;">Top Rated looks back over the last 4 weeks. Fresh Drops are new this week.</p>
+              <p style="margin:14px 0 0;font-size:12px;color:#888;">Fresh Drops are new this week. Top Rated looks back over the last 4 weeks.</p>
             </td>
           </tr>
-
-          ${simmeredSection}
 
           <!-- Fresh Drops Header -->
           <tr>
@@ -221,6 +219,8 @@ function buildEmailHtml(guide, allPicks, token) {
           ${freshHeroBlock}
 
           ${freshRows ? `<tr><td><table width="100%" cellpadding="0" cellspacing="0" role="presentation">${freshRows}</table></td></tr>` : ''}
+
+          ${simmeredSection}
 
           <!-- Open app CTA -->
           <tr>

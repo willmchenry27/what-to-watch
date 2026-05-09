@@ -17,41 +17,60 @@ export default function ScoreBadge({ imdbScore, rtScore, combinedScore, size = '
   if (combinedScore == null && imdbScore == null && rtScore == null) return null
 
   const isLarge = size === 'lg'
+  const isCompact = size === 'compact'
+
+  const combinedNumClass = isLarge ? 'text-2xl' : isCompact ? 'text-base' : 'text-xl'
+  const combinedLabelClass = isLarge
+    ? 'text-[10px] text-cream-300/50'
+    : isCompact
+      ? 'text-[8px] text-cream-300/40'
+      : 'text-[9px] text-cream-300/40'
+  const combinedWrapClass = isLarge
+    ? 'bg-white/10 backdrop-blur-sm rounded-md px-3 py-1.5'
+    : ''
+  const subLabelClass = isLarge
+    ? 'text-[10px] text-cream-300/50'
+    : isCompact
+      ? 'text-[8px] text-cream-300/40'
+      : 'text-[9px] text-cream-300/40'
+  const subNumClass = isLarge ? 'text-sm' : isCompact ? 'text-[10px]' : 'text-[11px]'
+  const rowGap = isCompact ? 'gap-2' : 'gap-3'
+  const emptyNumClass = isLarge ? 'text-lg' : isCompact ? 'text-sm' : 'text-sm'
 
   return (
-    <div className="flex items-center gap-3">
+    <div className={`flex items-center ${rowGap}`}>
       {combinedScore != null ? (
-        <div className={`flex items-center gap-1.5 ${isLarge ? 'bg-white/10 backdrop-blur-sm rounded-md px-3 py-1.5' : ''}`}>
-          <span className={`font-extrabold ${isLarge ? 'text-2xl' : 'text-xl'} ${combinedColor(combinedScore)}`}>
+        <div className={`flex items-center gap-1.5 ${combinedWrapClass}`}>
+          <span className={`font-extrabold ${combinedNumClass} ${combinedColor(combinedScore)}`}>
             {combinedScore}
           </span>
-          <span className={`uppercase tracking-wide font-semibold ${isLarge ? 'text-[10px] text-cream-300/50' : 'text-[9px] text-cream-300/40'}`}>
+          <span className={`uppercase tracking-wide font-semibold ${combinedLabelClass}`}>
             score
           </span>
         </div>
       ) : (imdbScore != null || rtScore != null) ? (
         <div className={`flex items-center gap-1.5 ${isLarge ? 'bg-white/5 backdrop-blur-sm rounded-md px-3 py-1.5' : ''}`}>
-          <span className={`font-semibold ${isLarge ? 'text-lg' : 'text-sm'} text-white/30`}>
+          <span className={`font-semibold ${emptyNumClass} text-white/30`}>
             —
           </span>
         </div>
       ) : null}
       {imdbScore != null && (
         <div className="flex items-center gap-1">
-          <span className={`uppercase tracking-wide font-semibold ${isLarge ? 'text-[10px] text-cream-300/50' : 'text-[9px] text-cream-300/40'}`}>
+          <span className={`uppercase tracking-wide font-semibold ${subLabelClass}`}>
             IMDb
           </span>
-          <span className={`font-semibold ${scoreColor(imdbScore, 10)} ${isLarge ? 'text-sm' : 'text-[11px]'}`}>
+          <span className={`font-semibold ${scoreColor(imdbScore, 10)} ${subNumClass}`}>
             {imdbScore}
           </span>
         </div>
       )}
       {rtScore != null && (
         <div className="flex items-center gap-1">
-          <span className={`uppercase tracking-wide font-semibold ${isLarge ? 'text-[10px] text-cream-300/50' : 'text-[9px] text-cream-300/40'}`}>
+          <span className={`uppercase tracking-wide font-semibold ${subLabelClass}`}>
             RT
           </span>
-          <span className={`font-semibold ${scoreColor(rtScore, 100)} ${isLarge ? 'text-sm' : 'text-[11px]'}`}>
+          <span className={`font-semibold ${scoreColor(rtScore, 100)} ${subNumClass}`}>
             {rtScore}%
           </span>
         </div>

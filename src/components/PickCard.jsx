@@ -5,7 +5,7 @@ import ActionButtons from './ActionButtons'
 
 export default function PickCard({ pick, isFeatured = false, isFirstRow = false, hideScores = false, onAction }) {
   const {
-    title, year, genres, platform, availability, poster_path, backdrop_path,
+    title, year, season, genres, platform, availability, poster_path, backdrop_path,
     imdb_score, rt_score, combined_score, rank, tmdb_id, type,
     cast, director, description,
   } = pick
@@ -21,6 +21,7 @@ export default function PickCard({ pick, isFeatured = false, isFirstRow = false,
     const titleBlock = (
       <h3 className="font-display text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-cream-100 mb-2 sm:drop-shadow-lg line-clamp-2">
         {titleUrl ? <a href={titleUrl} target="_blank" rel="noopener noreferrer" className="hover:text-gold-400 transition-colors">{title}</a> : title}
+        {season && <span className="text-xl text-cream-300/60 font-normal ml-3">S{season}</span>}
       </h3>
     )
 
@@ -47,20 +48,15 @@ export default function PickCard({ pick, isFeatured = false, isFirstRow = false,
     return (
       <article className="group relative rounded-xl overflow-hidden col-span-full bg-white/5 sm:bg-transparent">
         {/* ── Mobile split card (< sm) ── */}
-        <div className="sm:hidden">
+        <div className="sm:hidden flex flex-col">
           <div className="relative aspect-video overflow-hidden">
             <ImageWithFallback
               src={heroImage}
               alt={title}
               className="w-full h-full object-cover object-center"
             />
-            {!hideScores && (
-              <div className="absolute bottom-3 left-3">
-                <ScoreBadge imdbScore={imdb_score} rtScore={rt_score} combinedScore={combined_score} size="lg" />
-              </div>
-            )}
           </div>
-          <div className="p-4">
+          <div className="p-4 flex flex-col gap-2">
             {titleBlock}
             {metaBlock}
             {description && (
@@ -69,13 +65,16 @@ export default function PickCard({ pick, isFeatured = false, isFirstRow = false,
               </p>
             )}
             {cast && cast.length > 0 && (
-              <p className="text-xs text-cream-300/40 mt-2 truncate">
+              <p className="text-xs text-cream-300/40 truncate">
                 {cast.join(' · ')}
               </p>
             )}
-            <div className="mt-3">
-              <ActionButtons tmdbId={tmdb_id} size="lg" onAction={onAction} />
-            </div>
+          </div>
+          <div className="px-4 pb-4 pt-1 mt-auto flex items-center justify-between gap-2">
+            {!hideScores ? (
+              <ScoreBadge imdbScore={imdb_score} rtScore={rt_score} combinedScore={combined_score} size="compact" />
+            ) : <span />}
+            <ActionButtons tmdbId={tmdb_id} onAction={onAction} />
           </div>
         </div>
 
@@ -131,7 +130,7 @@ export default function PickCard({ pick, isFeatured = false, isFirstRow = false,
 
   // ─── Glassmorphic Grid Card ───
   return (
-    <article className={`group relative rounded-xl overflow-hidden bg-white/5 backdrop-blur-md border border-white/10 hover:border-white/20 hover:-translate-y-1 transition-all duration-300 ${isFirstRow ? 'md:col-span-1' : ''}`}>
+    <article className={`group relative rounded-xl overflow-hidden bg-white/5 backdrop-blur-md border border-white/10 hover:border-white/20 hover:-translate-y-1 transition-all duration-300 flex flex-col ${isFirstRow ? 'md:col-span-1' : ''}`}>
       <div className={`relative ${isFirstRow ? 'aspect-[4/3]' : 'aspect-video'} overflow-hidden`}>
         <ImageWithFallback
           src={poster_path || backdrop_path}
@@ -147,18 +146,17 @@ export default function PickCard({ pick, isFeatured = false, isFirstRow = false,
           </div>
         </div>
 
-        {/* Rank badge */}
         {rank != null && (
           <div className="absolute top-2 left-2 w-8 h-8 rounded-full bg-dark-950/80 backdrop-blur-sm border border-white/15 flex items-center justify-center">
             <span className="text-sm font-bold font-display text-gold-400">#{rank}</span>
           </div>
         )}
-
       </div>
 
-      <div className="p-3.5">
+      <div className="p-3.5 flex-1 flex flex-col">
         <h3 className="font-display text-base font-semibold text-cream-100 mb-0.5 truncate">
           {titleUrl ? <a href={titleUrl} target="_blank" rel="noopener noreferrer" className="hover:text-gold-400 transition-colors">{title}</a> : title}
+          {season && <span className="text-sm text-cream-300/50 font-normal ml-1">S{season}</span>}
         </h3>
 
         <div className="flex items-center gap-1.5 text-xs text-cream-300/70 mb-2.5 flex-wrap">
@@ -168,13 +166,15 @@ export default function PickCard({ pick, isFeatured = false, isFirstRow = false,
           {platform && (
             <>
               <span className="text-cream-300/30">·</span>
-              <PlatformBadge platform={platform} url={titleUrl} availability={availability} />
+              <PlatformBadge platform={platform} url={titleUrl} availability={availability} compact />
             </>
           )}
         </div>
 
-        <div className="flex items-center justify-between">
-          {!hideScores ? <ScoreBadge imdbScore={imdb_score} rtScore={rt_score} combinedScore={combined_score} /> : <span />}
+        <div className="mt-auto flex items-center justify-between gap-2 pt-1">
+          {!hideScores ? (
+            <ScoreBadge imdbScore={imdb_score} rtScore={rt_score} combinedScore={combined_score} size="compact" />
+          ) : <span />}
           <ActionButtons tmdbId={tmdb_id} onAction={onAction} />
         </div>
       </div>

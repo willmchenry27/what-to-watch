@@ -20,13 +20,16 @@ const availabilityColors = {
   'theaters': 'bg-gold-400/20 text-gold-400 border-gold-400/30',
 }
 
-export default function PlatformBadge({ platform, url, availability }) {
+export default function PlatformBadge({ platform, url, availability, compact = false }) {
   if (!platform) return null
 
   const colors = availabilityColors[availability]
     || platformColors[platform]
     || 'bg-white/15 text-cream-200 border-white/25'
-  const className = `inline-flex items-center px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide rounded border backdrop-blur-sm drop-shadow-lg ${colors}`
+  const sizing = compact
+    ? 'px-1.5 py-0.5 text-[9px]'
+    : 'px-2.5 py-1 text-[11px]'
+  const className = `inline-flex items-center ${sizing} font-bold uppercase tracking-wide rounded border backdrop-blur-sm drop-shadow-lg ${colors}`
   const href = url
 
   if (href) {

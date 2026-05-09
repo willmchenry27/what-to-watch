@@ -67,7 +67,7 @@ async function tmdbFetch(endpoint, params = {}) {
   return res.json()
 }
 
-const MAX_PAGES = 3
+const MAX_PAGES = 5
 
 async function fetchNewMovies(dateWindow) {
   console.log(`Fetching movies released ${dateWindow.gte} to ${dateWindow.lte}...`)

@@ -84,6 +84,16 @@ function buildPickRow(pick, rank, showScore, token) {
     </tr>`
 }
 
+const RECENCY_WEIGHT_PER_WEEK = 1.5
+
+function topRatedSortScore(pick, currentWeekStr) {
+  if (pick.combined_score == null) return -Infinity
+  if (pick.cohort === 'returning' || !pick.first_seen_week) return pick.combined_score
+  const ms = new Date(currentWeekStr).getTime() - new Date(pick.first_seen_week).getTime()
+  const ageWeeks = Math.max(0, ms / (7 * 24 * 60 * 60 * 1000))
+  return pick.combined_score - ageWeeks * RECENCY_WEIGHT_PER_WEEK
+}
+
 function buildEmailHtml(guide, allPicks, token) {
   const { appUrl } = getEmailPublicUrls()
   // Blend cohorts:
@@ -104,7 +114,7 @@ function buildEmailHtml(guide, allPicks, token) {
   // then pick hero from the limited list so runners + hero === simmeredTop.length.
   const simmeredTop = simmered
     .filter((p) => p.combined_score != null)
-    .sort((a, b) => b.combined_score - a.combined_score)
+    .sort((a, b) => topRatedSortScore(b, guide.week_of) - topRatedSortScore(a, guide.week_of))
     .slice(0, 10)
   const simmeredHeroIdx = simmeredTop.findIndex((p) => p.backdrop_path || p.poster_path)
   const simmeredHero = simmeredHeroIdx >= 0 ? simmeredTop[simmeredHeroIdx] : (simmeredTop[0] || null)

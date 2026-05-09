@@ -91,6 +91,9 @@ async function migrate() {
   if (!cols.find((c) => c.name === 'score_source')) {
     stmts.push('ALTER TABLE picks ADD COLUMN score_source TEXT')
   }
+  if (!cols.find((c) => c.name === 'first_seen_week')) {
+    stmts.push('ALTER TABLE picks ADD COLUMN first_seen_week TEXT')
+  }
 
   // Drop legacy user_actions table if it exists — data is unscoped and cannot be
   // safely mapped to recipients

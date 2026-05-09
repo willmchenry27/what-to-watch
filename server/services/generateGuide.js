@@ -8,6 +8,15 @@ const MIN_TMDB_VOTES = 5
 const SIMMER_WEEKS = 4
 const RETURNING_WEEKS = 12
 const SEASON_VOTES_THRESHOLD = 50
+const RECENCY_WEIGHT_PER_WEEK = 1.5
+
+function topRatedSortScore(pick, currentWeekStr) {
+  if (pick.combined_score == null) return -Infinity
+  if (pick.cohort === 'returning' || !pick.first_seen_week) return pick.combined_score
+  const ms = new Date(currentWeekStr).getTime() - new Date(pick.first_seen_week).getTime()
+  const ageWeeks = Math.max(0, ms / (7 * 24 * 60 * 60 * 1000))
+  return pick.combined_score - ageWeeks * RECENCY_WEIGHT_PER_WEEK
+}
 
 function calculateCombinedScore(imdbScore, rtScore, tmdbVoteAverage, tmdbVoteCount) {
   const normalizedImdb = imdbScore ? imdbScore * 10 : null
@@ -158,6 +167,8 @@ async function loadSimmeredCandidates() {
     popularity: 0,
     tmdb_vote_average: p.tmdb_vote_average,
     tmdb_vote_count: p.tmdb_vote_count,
+    // _guideId is `guide-YYYY-MM-DD`; the original fresh week is the date suffix
+    first_seen_week: p._guideId.replace(/^guide-/, ''),
   }))
 }
 
@@ -217,8 +228,8 @@ async function saveToDatabase(weekOf, freshPicks, simmeredPicks, returningPicks 
   const db = await getDb()
   const guideId = `guide-${weekOf}`
 
-  const pickSql = `INSERT INTO picks (guide_id, rank, tmdb_id, imdb_id, title, year, type, season, genres, description, imdb_score, rt_score, combined_score, platform, platform_slug, availability, poster_path, backdrop_path, cast_list, director, in_theaters, cohort, tmdb_vote_average, tmdb_vote_count, season_vote_average, season_vote_count, score_source)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  const pickSql = `INSERT INTO picks (guide_id, rank, tmdb_id, imdb_id, title, year, type, season, genres, description, imdb_score, rt_score, combined_score, platform, platform_slug, availability, poster_path, backdrop_path, cast_list, director, in_theaters, cohort, tmdb_vote_average, tmdb_vote_count, season_vote_average, season_vote_count, score_source, first_seen_week)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
   function pickArgs(p, cohort) {
     return [
@@ -231,6 +242,7 @@ async function saveToDatabase(weekOf, freshPicks, simmeredPicks, returningPicks 
       p.in_theaters ? 1 : 0, cohort,
       p.tmdb_vote_average ?? null, p.tmdb_vote_count ?? null,
       p.season_vote_average ?? null, p.season_vote_count ?? null, p.score_source ?? null,
+      p.first_seen_week || weekOf,
     ]
   }
 
@@ -447,7 +459,11 @@ async function generateGuide() {
     const qualityDropped = beforeQuality - simmeredPicks.length
     if (qualityDropped > 0) console.log(`  Top Rated quality filter: removed ${qualityDropped} unscored picks`)
 
-    simmeredPicks = rankPicks(simmeredPicks)
+    // Recency-aware sort: newer scored picks beat older near-ties.
+    simmeredPicks = simmeredPicks
+      .map((p) => ({ ...p, cohort: 'simmered' }))
+      .sort((a, b) => topRatedSortScore(b, week_of) - topRatedSortScore(a, week_of))
+      .map((p, i) => ({ ...p, rank: i + 1 }))
 
     console.log(`\n  Simmered Picks: ${simmeredPicks.length} titles`)
     const withScores = simmeredPicks.filter((p) => p.combined_score !== null)

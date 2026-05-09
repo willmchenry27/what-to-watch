@@ -32,6 +32,7 @@ function formatGuide(guide, picks) {
       season_vote_average: p.season_vote_average ?? undefined,
       season_vote_count: p.season_vote_count ?? undefined,
       score_source: p.score_source || undefined,
+      first_seen_week: p.first_seen_week || undefined,
     })),
   }
 }

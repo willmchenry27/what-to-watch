@@ -32,6 +32,16 @@ function searchFilter(picks, query) {
   )
 }
 
+const RECENCY_WEIGHT_PER_WEEK = 1.5
+
+function topRatedSortScore(pick, currentWeekStr) {
+  if (pick.combined_score == null) return -Infinity
+  if (pick.cohort === 'returning' || !pick.first_seen_week || !currentWeekStr) return pick.combined_score
+  const ms = new Date(currentWeekStr).getTime() - new Date(pick.first_seen_week).getTime()
+  const ageWeeks = Math.max(0, ms / (7 * 24 * 60 * 60 * 1000))
+  return pick.combined_score - ageWeeks * RECENCY_WEIGHT_PER_WEEK
+}
+
 function App() {
   const [activeTab, setActiveTab] = useState('last_week')
   const [searchQuery, setSearchQuery] = useState('')
@@ -101,18 +111,19 @@ function App() {
       .map((p, i) => ({ ...p, rank: i + 1 }))
   }, [freshPicks, searchQuery])
 
-  // Top Rated — search, sort by combined_score (blended simmered + scored returning), reassign ranks
+  // Top Rated — search, recency-aware sort (blended simmered + scored returning), reassign ranks
   const filteredSimmered = useMemo(() => {
+    const week = guide?.week_of
     return searchFilter(simmeredPicks, searchQuery)
       .slice()
       .sort((a, b) => {
-        const aScore = a.combined_score ?? -1
-        const bScore = b.combined_score ?? -1
+        const aScore = topRatedSortScore(a, week)
+        const bScore = topRatedSortScore(b, week)
         if (aScore !== bScore) return bScore - aScore
         return (b.popularity || 0) - (a.popularity || 0)
       })
       .map((p, i) => ({ ...p, rank: i + 1 }))
-  }, [simmeredPicks, searchQuery])
+  }, [simmeredPicks, searchQuery, guide?.week_of])
 
   // Heroes — mirror the email rule: prefer the highest-ranked pick that has a
   // usable image (backdrop or poster), fall back to the highest-ranked pick

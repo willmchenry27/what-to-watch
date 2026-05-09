@@ -135,11 +135,17 @@ async function loadSimmeredCandidates() {
 
   if (allRows.length === 0) return []
 
-  // Deduplicate by tmdb_id — keep the newer row (first guide ID is more recent)
+  // Deduplicate by tmdb_id — keep the newer row's data, but track the OLDEST
+  // guide_id seen so first_seen_week reflects the original fresh appearance.
   const seen = new Map()
+  const oldestGuideId = new Map()
   for (const row of allRows) {
     if (!seen.has(row.tmdb_id)) {
       seen.set(row.tmdb_id, row)
+    }
+    const prev = oldestGuideId.get(row.tmdb_id)
+    if (!prev || row._guideId < prev) {
+      oldestGuideId.set(row.tmdb_id, row._guideId)
     }
   }
   const deduped = [...seen.values()]
@@ -167,8 +173,9 @@ async function loadSimmeredCandidates() {
     popularity: 0,
     tmdb_vote_average: p.tmdb_vote_average,
     tmdb_vote_count: p.tmdb_vote_count,
-    // _guideId is `guide-YYYY-MM-DD`; the original fresh week is the date suffix
-    first_seen_week: p._guideId.replace(/^guide-/, ''),
+    // Use the OLDEST guide_id for this tmdb_id so age reflects the original
+    // fresh appearance, not the most recent re-save.
+    first_seen_week: oldestGuideId.get(p.tmdb_id).replace(/^guide-/, ''),
   }))
 }
 

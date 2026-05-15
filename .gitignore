@@ -9,6 +9,7 @@ lerna-debug.log*
 
 .env
 .env.*
+!apps/fire-tv/.env.example
 node_modules
 *.db
 *.db-shm

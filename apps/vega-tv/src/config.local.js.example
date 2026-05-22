@@ -1,0 +1,6 @@
+// Copy this file to `config.local.js` and set your Mac's LAN IP.
+// Find it with: ipconfig getifaddr en0
+// Ensure the Express server is reachable on that IP+port from another device on the LAN.
+export default {
+  API_BASE_URL: 'http://192.168.1.42:3001',
+}

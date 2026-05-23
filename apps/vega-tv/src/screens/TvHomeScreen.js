@@ -1,14 +1,16 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { ScrollView, StyleSheet, Text, View } from 'react-native'
 import { useGuide } from '../hooks/useGuide'
 import { groupPicks } from '../lib/grouping'
 import { TvRow } from '../components/TvRow'
 import { TvLoading } from '../components/TvLoading'
 import { TvError } from '../components/TvError'
+import { TvDetailModal } from '../components/TvDetailModal'
 import { colors, spacing } from '../theme/colors'
 
 export function TvHomeScreen() {
   const { status, guide, error } = useGuide()
+  const [activePick, setActivePick] = useState(null)
 
   const picks = guide?.picks ?? []
   const { topRated, freshDrops } = useMemo(
@@ -39,15 +41,22 @@ export function TvHomeScreen() {
           title="Top Rated"
           subtitle="Scored by IMDb + TMDB community"
           picks={topRated}
+          onSelect={setActivePick}
           preferFirstFocus
         />
         <TvRow
           title="Fresh Drops"
           subtitle="New this week · sorted by buzz"
           picks={freshDrops}
+          onSelect={setActivePick}
         />
         <View style={{ height: spacing.xxl }} />
       </ScrollView>
+      <TvDetailModal
+        pick={activePick}
+        visible={Boolean(activePick)}
+        onClose={() => setActivePick(null)}
+      />
     </View>
   )
 }

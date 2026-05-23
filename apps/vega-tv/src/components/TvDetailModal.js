@@ -1,10 +1,12 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { BackHandler, Image, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { colors, spacing } from '../theme/colors'
 import { tmdbImage } from '../api/client'
 import { ScoreBadgeRow } from './ScoreBadge'
 
 export function TvDetailModal({ pick, visible, onClose }) {
+  const closeRef = useRef(null)
+
   useEffect(() => {
     if (!visible) return undefined
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -28,7 +30,7 @@ export function TvDetailModal({ pick, visible, onClose }) {
             <View style={[styles.backdrop, styles.backdropFallback]} />
           )}
           <View style={styles.fade} />
-          <ScrollView contentContainerStyle={styles.content}>
+          <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
             <Text style={styles.eyebrow}>
               {pick.platform ?? '—'}
               {pick.year ? ` · ${pick.year}` : ''}
@@ -47,22 +49,29 @@ export function TvDetailModal({ pick, visible, onClose }) {
             ) : null}
             {pick.description ? <Text style={styles.description}>{pick.description}</Text> : null}
             {pick.cast?.length ? (
-              <Text style={styles.cast}>
+              <View style={styles.castRow}>
                 <Text style={styles.castLabel}>Cast </Text>
-                {pick.cast.slice(0, 5).join(', ')}
-              </Text>
+                <Text style={[styles.cast, styles.castNames]}>
+                  {pick.cast.slice(0, 5).join(', ')}
+                </Text>
+              </View>
             ) : null}
             {director ? <Text style={styles.director}>{director}</Text> : null}
-            <View style={styles.actionRow}>
-              <Pressable
-                onPress={onClose}
-                hasTVPreferredFocus
-                style={({ focused }) => [styles.closeBtn, focused && styles.closeBtnFocused]}
-              >
-                <Text style={styles.closeBtnText}>Close</Text>
-              </Pressable>
-            </View>
           </ScrollView>
+          <View style={styles.footer}>
+            <Pressable
+              ref={closeRef}
+              onPress={onClose}
+              hasTVPreferredFocus
+              nextFocusUp={closeRef.current}
+              nextFocusDown={closeRef.current}
+              nextFocusLeft={closeRef.current}
+              nextFocusRight={closeRef.current}
+              style={({ focused }) => [styles.closeBtn, focused && styles.closeBtnFocused]}
+            >
+              <Text style={styles.closeBtnText}>Close</Text>
+            </Pressable>
+          </View>
         </View>
       </View>
     </Modal>
@@ -79,7 +88,7 @@ const styles = StyleSheet.create({
   panel: {
     width: '85%',
     maxWidth: 1100,
-    maxHeight: '85%',
+    height: '85%',
     backgroundColor: colors.bgElevated,
     borderRadius: 16,
     overflow: 'hidden',
@@ -100,69 +109,90 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bgElevated,
     opacity: 0.6,
   },
+  scroll: {
+    flex: 1,
+  },
   content: {
-    padding: spacing.xl,
-    gap: spacing.md,
+    padding: spacing.xxl,
+    gap: spacing.lg,
+  },
+  footer: {
+    paddingHorizontal: spacing.xxl,
+    paddingVertical: spacing.lg,
+    borderTopWidth: 1,
+    borderTopColor: colors.cardBorder,
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    backgroundColor: colors.bgElevated,
   },
   eyebrow: {
     color: colors.accent,
-    fontSize: 13,
+    fontSize: 22,
     fontWeight: '700',
-    letterSpacing: 1.2,
+    letterSpacing: 1.4,
     textTransform: 'uppercase',
   },
   title: {
     color: colors.text,
-    fontSize: 40,
+    fontSize: 56,
     fontWeight: '800',
-    letterSpacing: -0.5,
+    letterSpacing: -0.6,
   },
   genres: {
     color: colors.textMuted,
-    fontSize: 14,
+    fontSize: 24,
     letterSpacing: 0.4,
   },
   description: {
     color: colors.text,
-    fontSize: 17,
-    lineHeight: 26,
+    fontSize: 28,
+    lineHeight: 40,
+    marginTop: spacing.sm,
+  },
+  castRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'baseline',
     marginTop: spacing.sm,
   },
   cast: {
     color: colors.textMuted,
-    fontSize: 15,
-    marginTop: spacing.sm,
+    fontSize: 24,
+  },
+  castNames: {
+    flex: 1,
   },
   castLabel: {
     color: colors.text,
+    fontSize: 24,
     fontWeight: '700',
   },
   director: {
     color: colors.textMuted,
-    fontSize: 14,
+    fontSize: 22,
     fontStyle: 'italic',
   },
-  actionRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.md,
-    marginTop: spacing.lg,
-  },
   closeBtn: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm + 2,
-    borderRadius: 8,
-    borderWidth: 2,
+    paddingHorizontal: 48,
+    paddingVertical: 18,
+    borderRadius: 10,
+    borderWidth: 3,
     borderColor: 'transparent',
     backgroundColor: colors.cardBg,
   },
   closeBtnFocused: {
     borderColor: colors.accent,
-    transform: [{ scale: 1.05 }],
+    backgroundColor: 'rgba(201,168,76,0.15)',
+    transform: [{ scale: 1.08 }],
+    shadowColor: colors.accent,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 16,
+    elevation: 12,
   },
   closeBtnText: {
     color: colors.text,
-    fontSize: 16,
+    fontSize: 26,
     fontWeight: '700',
     letterSpacing: 0.4,
   },

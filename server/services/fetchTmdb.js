@@ -9,6 +9,7 @@ const STREAMING_PRIORITY = [
   { id: 8,   name: 'Netflix',            slug: 'netflix' },
   { id: 9,   name: 'Amazon Prime Video', slug: 'prime' },
   { id: 337, name: 'Disney+',            slug: 'disney-plus' },
+  { id: 15,  name: 'Hulu',               slug: 'hulu' },
   { id: 384, name: 'Max',                slug: 'max' },
   { id: 2,   name: 'Apple TV+',          slug: 'apple-tv-plus' },
   { id: 386, name: 'Peacock',            slug: 'peacock' },
@@ -78,30 +79,34 @@ async function tmdbFetch(endpoint, params = {}) {
 }
 
 const MAX_PAGES = 5
+const MAX_TRENDING_PAGES = 2
+const MAX_DISCOVERY_CANDIDATES = 220
+const TRENDING_LOOKBACK_DAYS = 56
+const TRENDING_LOOKAHEAD_DAYS = 14
 
-async function fetchNewMovies(dateWindow) {
-  console.log(`Fetching movies released ${dateWindow.gte} to ${dateWindow.lte}...`)
+function addDays(dateStr, days) {
+  const date = new Date(`${dateStr}T00:00:00Z`)
+  date.setUTCDate(date.getUTCDate() + days)
+  return date.toISOString().split('T')[0]
+}
 
+function isDateInRange(dateStr, gte, lte) {
+  return Boolean(dateStr && dateStr >= gte && dateStr <= lte)
+}
+
+async function fetchPages(endpoint, params, maxPages, label) {
   const allResults = []
-  for (let page = 1; page <= MAX_PAGES; page++) {
-    const data = await tmdbFetch('/discover/movie', {
-      'primary_release_date.gte': dateWindow.gte,
-      'primary_release_date.lte': dateWindow.lte,
-      'sort_by': 'popularity.desc',
-      'region': 'US',
-      'with_release_type': '2|3',
-      'with_original_language': 'en',
-      'page': page,
-    })
-
-    if (page === 1) console.log(`  Found ${data.total_results} movies total`)
-    allResults.push(...data.results)
-    if (page >= data.total_pages) break
+  for (let page = 1; page <= maxPages; page++) {
+    const data = await tmdbFetch(endpoint, { ...params, page })
+    if (page === 1) console.log(`  Found ${data.total_results ?? data.results?.length ?? 0} ${label} total`)
+    allResults.push(...(data.results || []))
+    if (page >= (data.total_pages || 1)) break
   }
+  return allResults
+}
 
-  console.log(`  Fetched ${allResults.length} movies (up to ${MAX_PAGES} pages)`)
-
-  return allResults.map((m) => ({
+function mapMovie(m, discoverySource, inTheaters) {
+  return {
     tmdb_id: m.id,
     title: m.title,
     year: m.release_date ? parseInt(m.release_date.split('-')[0]) : null,
@@ -111,34 +116,15 @@ async function fetchNewMovies(dateWindow) {
     poster_path: m.poster_path ? `${IMG_BASE}/w500${m.poster_path}` : null,
     backdrop_path: m.backdrop_path ? `${IMG_BASE}/w1280${m.backdrop_path}` : null,
     popularity: m.popularity,
-    in_theaters: true,
+    in_theaters: inTheaters,
     tmdb_vote_average: m.vote_average || null,
     tmdb_vote_count: m.vote_count || null,
-  }))
+    discovery_sources: [discoverySource],
+  }
 }
 
-async function fetchNewTV(dateWindow) {
-  console.log(`Fetching TV airing ${dateWindow.gte} to ${dateWindow.lte}...`)
-
-  const allResults = []
-  for (let page = 1; page <= MAX_PAGES; page++) {
-    const data = await tmdbFetch('/discover/tv', {
-      'first_air_date.gte': dateWindow.gte,
-      'first_air_date.lte': dateWindow.lte,
-      'sort_by': 'popularity.desc',
-      'watch_region': 'US',
-      'with_original_language': 'en',
-      'page': page,
-    })
-
-    if (page === 1) console.log(`  Found ${data.total_results} TV shows total`)
-    allResults.push(...data.results)
-    if (page >= data.total_pages) break
-  }
-
-  console.log(`  Fetched ${allResults.length} TV shows (up to ${MAX_PAGES} pages)`)
-
-  return allResults.map((t) => ({
+function mapTv(t, discoverySource) {
+  return {
     tmdb_id: t.id,
     title: t.name,
     year: t.first_air_date ? parseInt(t.first_air_date.split('-')[0]) : null,
@@ -151,7 +137,132 @@ async function fetchNewTV(dateWindow) {
     in_theaters: false,
     tmdb_vote_average: t.vote_average || null,
     tmdb_vote_count: t.vote_count || null,
-  }))
+    discovery_sources: [discoverySource],
+  }
+}
+
+async function fetchNewMovies(dateWindow) {
+  console.log(`Fetching US movie releases ${dateWindow.gte} to ${dateWindow.lte}...`)
+
+  const common = {
+    'release_date.gte': dateWindow.gte,
+    'release_date.lte': dateWindow.lte,
+    'sort_by': 'popularity.desc',
+    'region': 'US',
+    'with_original_language': 'en',
+  }
+  const [theatrical, digital] = await Promise.all([
+    fetchPages('/discover/movie', {
+      ...common,
+      'with_release_type': '2|3',
+    }, MAX_PAGES, 'theatrical movies'),
+    fetchPages('/discover/movie', {
+      ...common,
+      'with_release_type': '4|6',
+      'watch_region': 'US',
+      'with_watch_monetization_types': 'flatrate|free|ads',
+    }, MAX_PAGES, 'digital/TV movies'),
+  ])
+
+  console.log(`  Fetched ${theatrical.length} theatrical + ${digital.length} digital/TV movies`)
+  return [
+    ...theatrical.map((movie) => mapMovie(movie, 'theatrical_release', true)),
+    ...digital.map((movie) => mapMovie(movie, 'digital_release', false)),
+  ]
+}
+
+async function fetchNewTV(dateWindow) {
+  console.log(`Fetching TV airing ${dateWindow.gte} to ${dateWindow.lte}...`)
+
+  const allResults = await fetchPages('/discover/tv', {
+      'first_air_date.gte': dateWindow.gte,
+      'first_air_date.lte': dateWindow.lte,
+      'sort_by': 'popularity.desc',
+      'watch_region': 'US',
+      'with_original_language': 'en',
+    }, MAX_PAGES, 'TV premieres')
+
+  console.log(`  Fetched ${allResults.length} TV shows (up to ${MAX_PAGES} pages)`)
+  return allResults.map((show) => mapTv(show, 'tv_premiere'))
+}
+
+async function fetchWeeklyTrending(dateWindow) {
+  console.log('Fetching TMDB weekly trending movies and TV...')
+  const [movies, tvShows] = await Promise.all([
+    fetchPages('/trending/movie/week', { language: 'en-US' }, MAX_TRENDING_PAGES, 'trending movies'),
+    fetchPages('/trending/tv/week', { language: 'en-US' }, MAX_TRENDING_PAGES, 'trending TV shows'),
+  ])
+
+  const gte = addDays(dateWindow.gte, -TRENDING_LOOKBACK_DAYS)
+  const lte = addDays(dateWindow.lte, TRENDING_LOOKAHEAD_DAYS)
+  const recentMovies = movies.filter((movie) =>
+    movie.original_language === 'en' && isDateInRange(movie.release_date, gte, lte)
+  )
+  const recentTv = tvShows.filter((show) =>
+    show.original_language === 'en' && isDateInRange(show.first_air_date, gte, lte)
+  )
+
+  console.log(`  Kept ${recentMovies.length}/${movies.length} recent trending movies`)
+  console.log(`  Kept ${recentTv.length}/${tvShows.length} recent trending TV shows`)
+  return [
+    ...recentMovies.map((movie, index) => ({
+      ...mapMovie(movie, 'weekly_trending', true),
+      trending_rank: index + 1,
+    })),
+    ...recentTv.map((show, index) => ({
+      ...mapTv(show, 'weekly_trending'),
+      trending_rank: index + 1,
+    })),
+  ]
+}
+
+function mergeDiscoveryCandidates(candidates) {
+  const seen = new Map()
+  for (const pick of candidates) {
+    const key = `${pick.type}:${pick.tmdb_id}`
+    const existing = seen.get(key)
+    if (!existing) {
+      seen.set(key, { ...pick, discovery_sources: [...(pick.discovery_sources || [])] })
+      continue
+    }
+
+    const sources = new Set([
+      ...(existing.discovery_sources || []),
+      ...(pick.discovery_sources || []),
+    ])
+    seen.set(key, {
+      ...existing,
+      title: existing.title || pick.title,
+      year: existing.year || pick.year,
+      genres: existing.genres?.length ? existing.genres : pick.genres,
+      description: existing.description || pick.description,
+      poster_path: existing.poster_path || pick.poster_path,
+      backdrop_path: existing.backdrop_path || pick.backdrop_path,
+      popularity: Math.max(existing.popularity || 0, pick.popularity || 0),
+      tmdb_vote_average: pick.tmdb_vote_count > existing.tmdb_vote_count
+        ? pick.tmdb_vote_average
+        : existing.tmdb_vote_average,
+      tmdb_vote_count: Math.max(existing.tmdb_vote_count || 0, pick.tmdb_vote_count || 0),
+      in_theaters: existing.in_theaters && pick.in_theaters,
+      discovery_sources: [...sources],
+      trending_rank: Math.min(
+        existing.trending_rank || Number.MAX_SAFE_INTEGER,
+        pick.trending_rank || Number.MAX_SAFE_INTEGER,
+      ),
+    })
+  }
+  return [...seen.values()]
+}
+
+function discoveryPriority(pick) {
+  const sources = new Set(pick.discovery_sources || [])
+  const trendingBonus = sources.has('weekly_trending')
+    ? Math.max(0, 50 - (pick.trending_rank || 50))
+    : 0
+  const releaseBonus = sources.has('digital_release') || sources.has('theatrical_release') || sources.has('tv_premiere')
+    ? 30
+    : 0
+  return releaseBonus + trendingBonus + Math.log10((pick.popularity || 0) + 1) * 10
 }
 
 async function fetchReturningSeasons(dateWindow) {
@@ -367,25 +478,36 @@ async function fetchAllTmdbPicks(overrideDateWindow) {
   const dateWindow = overrideDateWindow || getDateWindow()
   console.log(`\nTMDB Fetch: Week of ${dateWindow.gte} to ${dateWindow.lte}\n`)
 
-  // Fetch movies and TV in parallel
-  const [movies, tvShows] = await Promise.all([
+  // Date-window discovery catches premieres; weekly trending catches titles
+  // that break out after their first week.
+  const [movies, tvShows, trending] = await Promise.all([
     fetchNewMovies(dateWindow),
     fetchNewTV(dateWindow),
+    fetchWeeklyTrending(dateWindow),
   ])
 
-  // Deduplicate titles that appear in both movie and TV results (keep higher popularity)
-  const combined = [...movies, ...tvShows]
-  const seen = new Map()
-  for (const pick of combined) {
-    const key = `${pick.title.toLowerCase().trim()}-${pick.year}`
-    const existing = seen.get(key)
-    if (!existing || (pick.popularity || 0) > (existing.popularity || 0)) {
-      seen.set(key, pick)
+  const combined = [...movies, ...tvShows, ...trending]
+  const merged = mergeDiscoveryCandidates(combined)
+  const dupes = combined.length - merged.length
+  const allPicks = merged
+    .filter((pick) =>
+      pick.title &&
+      pick.description?.trim().length >= 40 &&
+      pick.genres?.length > 0 &&
+      (pick.poster_path || pick.backdrop_path)
+    )
+    .sort((a, b) => discoveryPriority(b) - discoveryPriority(a))
+    .slice(0, MAX_DISCOVERY_CANDIDATES)
+
+  const sourceCounts = {}
+  for (const pick of allPicks) {
+    for (const source of pick.discovery_sources || []) {
+      sourceCounts[source] = (sourceCounts[source] || 0) + 1
     }
   }
-  const allPicks = [...seen.values()]
-  const dupes = combined.length - allPicks.length
-  console.log(`\nTotal: ${allPicks.length} titles (${movies.length} movies, ${tvShows.length} TV${dupes > 0 ? `, ${dupes} duplicates removed` : ''})`)
+  console.log(`\nDiscovery union: ${combined.length} raw → ${merged.length} unique → ${allPicks.length} selected`)
+  if (dupes > 0) console.log(`  Deduplicated ${dupes} candidates by media type + TMDB ID`)
+  console.log(`  Sources in selected pool: ${JSON.stringify(sourceCounts)}`)
 
   // Enrich with credits and watch providers (batch of 5 at a time to be nice to the API)
   console.log('\nEnriching with credits and watch providers...')
@@ -403,7 +525,16 @@ async function fetchAllTmdbPicks(overrideDateWindow) {
   return { picks: enriched, week_of: dateWindow.gte }
 }
 
-module.exports = { fetchAllTmdbPicks, fetchReturningSeasons, fetchSeasonRating, getDateWindow, fetchWatchProviders, fetchExternalIds }
+module.exports = {
+  fetchAllTmdbPicks,
+  fetchReturningSeasons,
+  fetchSeasonRating,
+  getDateWindow,
+  fetchWatchProviders,
+  fetchExternalIds,
+  mergeDiscoveryCandidates,
+  discoveryPriority,
+}
 
 // Run standalone if called directly
 if (require.main === module) {

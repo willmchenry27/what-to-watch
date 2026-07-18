@@ -4,7 +4,7 @@ const OMDB_KEY = process.env.OMDB_API_KEY
 const BASE = 'https://www.omdbapi.com'
 
 /**
- * Single OMDb lookup by IMDb ID. Returns { imdb_score, rt_score } or nulls.
+ * Single OMDb lookup by IMDb ID. Returns audience score/vote volume and RT.
  */
 async function omdbLookupById(imdbId) {
   const url = new URL(BASE)
@@ -12,13 +12,18 @@ async function omdbLookupById(imdbId) {
   url.searchParams.set('i', imdbId)
 
   const res = await fetch(url.toString(), { signal: AbortSignal.timeout(15000) })
-  if (!res.ok) return { imdb_score: null, rt_score: null }
+  if (!res.ok) return { imdb_score: null, imdb_vote_count: null, rt_score: null }
 
   const data = await res.json()
-  if (data.Response === 'False') return { imdb_score: null, rt_score: null }
+  if (data.Response === 'False') {
+    return { imdb_score: null, imdb_vote_count: null, rt_score: null }
+  }
 
   const imdb_score = data.imdbRating && data.imdbRating !== 'N/A'
     ? parseFloat(data.imdbRating)
+    : null
+  const imdb_vote_count = data.imdbVotes && data.imdbVotes !== 'N/A'
+    ? parseInt(data.imdbVotes.replace(/,/g, ''), 10)
     : null
 
   let rt_score = null
@@ -30,7 +35,11 @@ async function omdbLookupById(imdbId) {
     }
   }
 
-  return { imdb_score, rt_score }
+  return {
+    imdb_score,
+    imdb_vote_count: Number.isFinite(imdb_vote_count) ? imdb_vote_count : null,
+    rt_score,
+  }
 }
 
 /**
@@ -49,9 +58,16 @@ async function enrichWithOmdbScores(picks) {
     const batch = picks.slice(i, i + 5)
     const results = await Promise.all(
       batch.map(async (pick) => {
-        if (!pick.imdb_id) return { ...pick, imdb_score: null, rt_score: null }
+        if (!pick.imdb_id) {
+          return { ...pick, imdb_score: null, imdb_vote_count: null, rt_score: null }
+        }
         const scores = await omdbLookupById(pick.imdb_id)
-        return { ...pick, imdb_score: scores.imdb_score, rt_score: scores.rt_score }
+        return {
+          ...pick,
+          imdb_score: scores.imdb_score,
+          imdb_vote_count: scores.imdb_vote_count,
+          rt_score: scores.rt_score,
+        }
       })
     )
     enriched.push(...results)

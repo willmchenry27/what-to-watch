@@ -36,8 +36,10 @@ async function createTables() {
       genres TEXT NOT NULL DEFAULT '[]',
       description TEXT,
       imdb_score REAL,
+      imdb_vote_count INTEGER,
       rt_score REAL,
       combined_score INTEGER,
+      score_confidence TEXT,
       platform TEXT,
       platform_slug TEXT,
       availability TEXT,
@@ -82,6 +84,9 @@ async function migrate() {
   if (!cols.find((c) => c.name === 'imdb_id')) {
     stmts.push('ALTER TABLE picks ADD COLUMN imdb_id TEXT')
   }
+  if (!cols.find((c) => c.name === 'imdb_vote_count')) {
+    stmts.push('ALTER TABLE picks ADD COLUMN imdb_vote_count INTEGER')
+  }
   if (!cols.find((c) => c.name === 'season_vote_average')) {
     stmts.push('ALTER TABLE picks ADD COLUMN season_vote_average REAL')
   }
@@ -90,6 +95,9 @@ async function migrate() {
   }
   if (!cols.find((c) => c.name === 'score_source')) {
     stmts.push('ALTER TABLE picks ADD COLUMN score_source TEXT')
+  }
+  if (!cols.find((c) => c.name === 'score_confidence')) {
+    stmts.push('ALTER TABLE picks ADD COLUMN score_confidence TEXT')
   }
   if (!cols.find((c) => c.name === 'first_seen_week')) {
     stmts.push('ALTER TABLE picks ADD COLUMN first_seen_week TEXT')

@@ -5,35 +5,99 @@ const { enrichWithOmdbScores } = require('./fetchOmdb')
 const { getDb } = require('../db/schema')
 
 const MIN_TMDB_VOTES = 5
-const SIMMER_WEEKS = 4
+const MIN_TOP_RATED_SCORE = 70
+const SIMMER_WEEKS = 8
 const RETURNING_WEEKS = 12
-const SEASON_VOTES_THRESHOLD = 50
 const RECENCY_WEIGHT_PER_WEEK = 1.5
+const DEFAULT_SCORE_PRIOR = 70
+const IMDB_PRIOR_VOTES = 250
+const TMDB_PRIOR_VOTES = 100
+const SEASON_BLEND_VOTES = 250
+const MAX_SCORED_RETURNING_PICKS = 20
+const MAX_UNSCORED_RETURNING_PICKS = 10
 
 function topRatedSortScore(pick, currentWeekStr) {
   if (pick.combined_score == null) return -Infinity
   // Season-level scores are real signal about THIS season — no decay. A
   // series-level fallback score is inherited goodwill (SpongeBob S17 riding
   // the series' lifetime IMDb rating), so it decays like everything else.
-  if (pick.cohort === 'returning' && pick.score_source === 'season') return pick.combined_score
-  if (!pick.first_seen_week) return pick.combined_score
+  const momentum = pick.momentum_boost || 0
+  if (pick.cohort === 'returning' && ['season', 'season_blend'].includes(pick.score_source)) {
+    return pick.combined_score + momentum
+  }
+  if (!pick.first_seen_week) return pick.combined_score + momentum
   const ms = new Date(currentWeekStr).getTime() - new Date(pick.first_seen_week).getTime()
   const ageWeeks = Math.max(0, ms / (7 * 24 * 60 * 60 * 1000))
-  return pick.combined_score - ageWeeks * RECENCY_WEIGHT_PER_WEEK
+  return pick.combined_score - ageWeeks * RECENCY_WEIGHT_PER_WEEK + momentum
 }
 
-function calculateCombinedScore(imdbScore, rtScore, tmdbVoteAverage, tmdbVoteCount) {
-  const normalizedImdb = imdbScore ? imdbScore * 10 : null
-  const normalizedRt = rtScore ?? null
-  if (normalizedImdb !== null && normalizedRt !== null) {
-    return Math.round((normalizedImdb + normalizedRt) / 2)
+function bayesianScore(score, voteCount, priorVotes, priorScore = DEFAULT_SCORE_PRIOR) {
+  if (score == null) return null
+  const votes = Math.max(0, voteCount || 0)
+  return ((score * votes) + (priorScore * priorVotes)) / (votes + priorVotes)
+}
+
+function scoreConfidence(sourceCount, audienceVoteCount, hasRtScore = false) {
+  if (sourceCount >= 2 && audienceVoteCount >= 1000) return 'high'
+  if (sourceCount >= 2 || audienceVoteCount >= 100 || hasRtScore) return 'medium'
+  return 'low'
+}
+
+function calculateScoreDetails(imdbScore, rtScore, tmdbVoteAverage, tmdbVoteCount, imdbVoteCount) {
+  const sources = []
+  if (imdbScore != null) {
+    sources.push({
+      score: bayesianScore(imdbScore * 10, imdbVoteCount, IMDB_PRIOR_VOTES),
+      weight: 0.45,
+    })
   }
-  if (normalizedImdb !== null) return Math.round(normalizedImdb)
-  if (normalizedRt !== null) return Math.round(normalizedRt)
-  if (tmdbVoteAverage && (tmdbVoteCount || 0) >= MIN_TMDB_VOTES) {
-    return Math.round(tmdbVoteAverage * 10)
+  if (rtScore != null) {
+    sources.push({ score: rtScore, weight: 0.35 })
   }
-  return null
+  if (tmdbVoteAverage != null && (tmdbVoteCount || 0) >= MIN_TMDB_VOTES) {
+    sources.push({
+      score: bayesianScore(tmdbVoteAverage * 10, tmdbVoteCount, TMDB_PRIOR_VOTES),
+      weight: 0.20,
+    })
+  }
+
+  if (sources.length === 0) {
+    return { combined_score: null, score_confidence: 'low' }
+  }
+
+  const totalWeight = sources.reduce((sum, source) => sum + source.weight, 0)
+  const weightedScore = sources.reduce((sum, source) => sum + source.score * source.weight, 0) / totalWeight
+  const audienceVoteCount = (imdbVoteCount || 0) + (tmdbVoteCount || 0)
+  return {
+    combined_score: Math.round(weightedScore),
+    score_confidence: scoreConfidence(sources.length, audienceVoteCount, rtScore != null),
+  }
+}
+
+function calculateCombinedScore(imdbScore, rtScore, tmdbVoteAverage, tmdbVoteCount, imdbVoteCount) {
+  return calculateScoreDetails(
+    imdbScore,
+    rtScore,
+    tmdbVoteAverage,
+    tmdbVoteCount,
+    imdbVoteCount,
+  ).combined_score
+}
+
+function calculateMomentumBoost(pick, combinedScore, imdbVoteCount, tmdbVoteCount) {
+  if (
+    pick.previous_combined_score == null ||
+    !pick.previous_score_confidence ||
+    combinedScore == null
+  ) {
+    return 0
+  }
+
+  const scoreGain = Math.max(0, Math.min(5, combinedScore - pick.previous_combined_score))
+  const currentVotes = (imdbVoteCount || 0) + (tmdbVoteCount || 0)
+  const voteGain = Math.max(0, currentVotes - (pick.previous_total_vote_count || 0))
+  const voteBoost = Math.min(3, Math.log10(voteGain + 1))
+  return Math.min(5, scoreGain * 0.4 + voteBoost)
 }
 
 async function scoreReturningPick(pick) {
@@ -44,28 +108,52 @@ async function scoreReturningPick(pick) {
   const seasonVoteAverage = seasonRating.vote_average
   const seasonVoteCount = seasonRating.vote_count
 
-  if (seasonVoteCount >= SEASON_VOTES_THRESHOLD && seasonVoteAverage != null) {
-    return {
-      ...pick,
-      season_vote_average: seasonVoteAverage,
-      season_vote_count: seasonVoteCount,
-      combined_score: Math.round(seasonVoteAverage * 10),
-      score_source: 'season',
-    }
-  }
-
-  const seriesScore = calculateCombinedScore(
+  const seriesDetails = calculateScoreDetails(
     pick.imdb_score,
     pick.rt_score,
     pick.tmdb_vote_average,
     pick.tmdb_vote_count,
+    pick.imdb_vote_count,
   )
+  let combinedScore = seriesDetails.combined_score
+  let confidence = seriesDetails.score_confidence
+  let scoreSource = combinedScore != null ? 'series' : null
+
+  if (seasonVoteAverage != null && seasonVoteCount > 0) {
+    const rawSeasonScore = seasonVoteAverage * 10
+    if (combinedScore != null) {
+      const seasonWeight = seasonVoteCount / (seasonVoteCount + SEASON_BLEND_VOTES)
+      combinedScore = Math.round(
+        rawSeasonScore * seasonWeight +
+        combinedScore * (1 - seasonWeight)
+      )
+      // Keep the existing public source label so current clients preserve
+      // no-decay behavior; the stored raw season and series fields show the blend.
+      scoreSource = 'season'
+      if (confidence === 'low' && seasonVoteCount >= 100) confidence = 'medium'
+      if (confidence === 'medium' && seasonVoteCount >= 1000) confidence = 'high'
+    } else {
+      combinedScore = Math.round(
+        bayesianScore(rawSeasonScore, seasonVoteCount, TMDB_PRIOR_VOTES)
+      )
+      confidence = scoreConfidence(1, seasonVoteCount)
+      scoreSource = 'season'
+    }
+  }
+
   return {
     ...pick,
     season_vote_average: seasonVoteAverage,
     season_vote_count: seasonVoteCount,
-    combined_score: seriesScore,
-    score_source: seriesScore != null ? 'series' : null,
+    combined_score: combinedScore,
+    score_confidence: confidence,
+    score_source: scoreSource,
+    momentum_boost: calculateMomentumBoost(
+      pick,
+      combinedScore,
+      pick.imdb_vote_count,
+      pick.tmdb_vote_count,
+    ),
   }
 }
 
@@ -86,7 +174,11 @@ function isFreshDropCandidate(p) {
 }
 
 function isTopRatedCandidate(p) {
-  return p.combined_score !== null && p.combined_score !== undefined
+  return (
+    p.combined_score != null &&
+    p.combined_score >= MIN_TOP_RATED_SCORE &&
+    ['medium', 'high'].includes(p.score_confidence)
+  )
 }
 
 function rankPicks(picks) {
@@ -126,12 +218,13 @@ async function loadSimmeredCandidates() {
   const allRows = []
   for (const guideId of guideIds) {
     const result = await db.execute({
-      sql: "SELECT * FROM picks WHERE guide_id = ? AND cohort = 'fresh' ORDER BY rank ASC",
+      sql: "SELECT * FROM picks WHERE guide_id = ? AND cohort IN ('fresh', 'simmered') ORDER BY rank ASC",
       args: [guideId],
     })
     const rows = result.rows
     if (rows.length > 0) {
-      console.log(`  Found ${rows.length} fresh picks from ${guideId}`)
+      const freshCount = rows.filter((row) => row.cohort === 'fresh').length
+      console.log(`  Found ${rows.length} tracked picks (${freshCount} fresh) from ${guideId}`)
       allRows.push(...rows.map((r) => ({ ...r, _guideId: guideId })))
     } else {
       console.log(`  No fresh picks found for ${guideId}`)
@@ -140,20 +233,25 @@ async function loadSimmeredCandidates() {
 
   if (allRows.length === 0) return []
 
-  // Deduplicate by tmdb_id — keep the newer row's data, but track the OLDEST
-  // guide_id seen so first_seen_week reflects the original fresh appearance.
+  // Only titles with a fresh appearance inside the retention window remain
+  // candidates. Keep their newest row for score momentum and provider data,
+  // while retaining the oldest fresh guide as first_seen_week.
   const seen = new Map()
   const oldestGuideId = new Map()
+  const freshIds = new Set()
   for (const row of allRows) {
     if (!seen.has(row.tmdb_id)) {
       seen.set(row.tmdb_id, row)
     }
-    const prev = oldestGuideId.get(row.tmdb_id)
-    if (!prev || row._guideId < prev) {
-      oldestGuideId.set(row.tmdb_id, row._guideId)
+    if (row.cohort === 'fresh') {
+      freshIds.add(row.tmdb_id)
+      const prev = oldestGuideId.get(row.tmdb_id)
+      if (!prev || row._guideId < prev) {
+        oldestGuideId.set(row.tmdb_id, row._guideId)
+      }
     }
   }
-  const deduped = [...seen.values()]
+  const deduped = [...seen.values()].filter((row) => freshIds.has(row.tmdb_id))
   const dupes = allRows.length - deduped.length
   if (dupes > 0) console.log(`  Deduped: removed ${dupes} titles appearing in multiple weeks`)
   console.log(`  Total simmer candidates: ${deduped.length}`)
@@ -176,11 +274,19 @@ async function loadSimmeredCandidates() {
     director: p.director,
     in_theaters: Boolean(p.in_theaters),
     popularity: p.popularity ?? 0,
+    imdb_score: p.imdb_score,
+    imdb_vote_count: p.imdb_vote_count,
+    rt_score: p.rt_score,
     tmdb_vote_average: p.tmdb_vote_average,
     tmdb_vote_count: p.tmdb_vote_count,
     // Use the OLDEST guide_id for this tmdb_id so age reflects the original
     // fresh appearance, not the most recent re-save.
     first_seen_week: oldestGuideId.get(p.tmdb_id).replace(/^guide-/, ''),
+    previous_combined_score: p.score_confidence ? p.combined_score : null,
+    previous_score_confidence: p.score_confidence || null,
+    previous_total_vote_count: p.score_confidence
+      ? (p.imdb_vote_count || 0) + (p.tmdb_vote_count || 0)
+      : null,
   }))
 }
 
@@ -242,9 +348,17 @@ async function loadReturningCandidates() {
       director: p.director,
       in_theaters: Boolean(p.in_theaters),
       popularity: p.popularity ?? 0,
+      imdb_score: p.imdb_score,
+      imdb_vote_count: p.imdb_vote_count,
+      rt_score: p.rt_score,
       tmdb_vote_average: p.tmdb_vote_average,
       tmdb_vote_count: p.tmdb_vote_count,
       first_seen_week: stored && stored < derived ? stored : derived,
+      previous_combined_score: p.score_confidence ? p.combined_score : null,
+      previous_score_confidence: p.score_confidence || null,
+      previous_total_vote_count: p.score_confidence
+        ? (p.imdb_vote_count || 0) + (p.tmdb_vote_count || 0)
+        : null,
     }
   })
 }
@@ -253,15 +367,16 @@ async function saveToDatabase(weekOf, freshPicks, simmeredPicks, returningPicks 
   const db = await getDb()
   const guideId = `guide-${weekOf}`
 
-  const pickSql = `INSERT INTO picks (guide_id, rank, tmdb_id, imdb_id, title, year, type, season, genres, description, imdb_score, rt_score, combined_score, platform, platform_slug, availability, poster_path, backdrop_path, cast_list, director, in_theaters, cohort, tmdb_vote_average, tmdb_vote_count, season_vote_average, season_vote_count, score_source, first_seen_week, popularity)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  const pickSql = `INSERT INTO picks (guide_id, rank, tmdb_id, imdb_id, title, year, type, season, genres, description, imdb_score, imdb_vote_count, rt_score, combined_score, score_confidence, platform, platform_slug, availability, poster_path, backdrop_path, cast_list, director, in_theaters, cohort, tmdb_vote_average, tmdb_vote_count, season_vote_average, season_vote_count, score_source, first_seen_week, popularity)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
   function pickArgs(p, cohort) {
     return [
       guideId, p.rank, p.tmdb_id || null, p.imdb_id || null, p.title, p.year || null,
       p.type, p.season || null, JSON.stringify(p.genres || []),
-      p.description || null, p.imdb_score ?? null, p.rt_score ?? null,
-      p.combined_score ?? null, p.platform || null, p.platform_slug || null,
+      p.description || null, p.imdb_score ?? null, p.imdb_vote_count ?? null, p.rt_score ?? null,
+      p.combined_score ?? null, p.score_confidence || null,
+      p.platform || null, p.platform_slug || null,
       p.availability || null, p.poster_path || null, p.backdrop_path || null,
       JSON.stringify(p.cast || []), p.director || null,
       p.in_theaters ? 1 : 0, cohort,
@@ -290,7 +405,7 @@ async function saveToDatabase(weekOf, freshPicks, simmeredPicks, returningPicks 
 async function generateGuide() {
   const startTime = Date.now()
   const errors = []
-  console.log('=== Generating Weekly Guide (4-Week Simmer Model) ===\n')
+  console.log(`=== Generating Weekly Guide (${SIMMER_WEEKS}-Week Candidate Model) ===\n`)
 
   // ── FRESH DROPS: This week's new releases, sorted by popularity ──
   console.log('Step 1: Fetching this week\'s FRESH DROPS from TMDB...')
@@ -313,8 +428,10 @@ async function generateGuide() {
       ...p,
       rank: i + 1,
       imdb_score: null,
+      imdb_vote_count: null,
       rt_score: null,
       combined_score: null,
+      score_confidence: 'low',
     }))
 
   const freshDropped = freshBeforeQuality - freshPicks.length
@@ -391,10 +508,33 @@ async function generateGuide() {
       if (i + 5 < omdbEnriched.length) await new Promise((r) => setTimeout(r, 250))
     }
 
-    returningPicks = scored
+    const scoredReturning = scored
+      .filter(isTopRatedCandidate)
       .sort((a, b) => {
-        const aScore = a.combined_score ?? -1
-        const bScore = b.combined_score ?? -1
+        const aRankScore = a.combined_score + (a.momentum_boost || 0)
+        const bRankScore = b.combined_score + (b.momentum_boost || 0)
+        return bRankScore - aRankScore || (b.popularity || 0) - (a.popularity || 0)
+      })
+      .slice(0, MAX_SCORED_RETURNING_PICKS)
+    const unscoredReturning = scored
+      .filter((pick) => pick.combined_score == null)
+      .sort((a, b) => (b.popularity || 0) - (a.popularity || 0))
+      .slice(0, MAX_UNSCORED_RETURNING_PICKS)
+    const eligibleReturning = [...scoredReturning, ...unscoredReturning]
+    const removedReturning = scored.length - eligibleReturning.length
+    if (removedReturning > 0) {
+      console.log(`  Returning quality/cap filter: removed ${removedReturning} seasons`)
+      console.log(`  Kept ${scoredReturning.length} scored + ${unscoredReturning.length} unscored returning picks`)
+    }
+
+    returningPicks = eligibleReturning
+      .sort((a, b) => {
+        const aScore = a.combined_score != null
+          ? a.combined_score + (a.momentum_boost || 0)
+          : -1
+        const bScore = b.combined_score != null
+          ? b.combined_score + (b.momentum_boost || 0)
+          : -1
         if (aScore !== bScore) return bScore - aScore
         return (b.popularity || 0) - (a.popularity || 0)
       })
@@ -404,19 +544,23 @@ async function generateGuide() {
     for (const p of returningPicks.slice(0, 5)) {
       const score = p.combined_score != null ? p.combined_score : 'unscored'
       const src = p.score_source ? ` (${p.score_source})` : ''
-      console.log(`    #${p.rank} ${p.title} S${p.season} — ${score}${src}`)
+      const confidence = p.score_confidence ? `, ${p.score_confidence}` : ''
+      console.log(`    #${p.rank} ${p.title} S${p.season} — ${score}${src}${confidence}`)
     }
   } catch (err) {
     console.error('PIPELINE WARNING: Returning seasons step failed:', err.message)
     errors.push(`Returning seasons: ${err.message}`)
   }
 
-  // ── SIMMERED PICKS: Last 4 weeks' releases, now scored ──
-  console.log('\nStep 2: Loading picks from past 4 weeks for SIMMERED scoring...')
+  // ── SIMMERED PICKS: Last 8 weeks' releases, now scored ──
+  console.log(`\nStep 2: Loading picks from past ${SIMMER_WEEKS} weeks for SIMMERED scoring...`)
   const prevPicks = await loadSimmeredCandidates()
 
   let simmeredPicks = []
   if (prevPicks.length > 0) {
+    const hadImdbIdBeforeRefresh = new Set(
+      prevPicks.filter((pick) => pick.imdb_id).map((pick) => pick.tmdb_id)
+    )
     console.log('\nStep 3: Enriching simmered picks with OMDb scores (by IMDb ID)...')
     let scored
     try {
@@ -460,7 +604,12 @@ async function generateGuide() {
       console.log(`  Refreshed ${withProviders.length}/${withTmdbId.length} picks with providers`)
 
       // Re-score picks that gained an imdb_id during refresh but weren't scored by OMDb yet
-      const needsRescore = withTmdbId.filter((p) => p.imdb_id && p.imdb_score == null && p.rt_score == null)
+      const needsRescore = withTmdbId.filter((p) =>
+        p.imdb_id &&
+        !hadImdbIdBeforeRefresh.has(p.tmdb_id) &&
+        p.imdb_score == null &&
+        p.rt_score == null
+      )
       if (needsRescore.length > 0) {
         console.log(`  Re-scoring ${needsRescore.length} picks that gained IMDb IDs...`)
         try {
@@ -469,6 +618,7 @@ async function generateGuide() {
             const pick = withTmdbId.find((p) => p.tmdb_id === r.tmdb_id)
             if (pick) {
               pick.imdb_score = r.imdb_score
+              pick.imdb_vote_count = r.imdb_vote_count
               pick.rt_score = r.rt_score
             }
           }
@@ -478,15 +628,32 @@ async function generateGuide() {
 
     simmeredPicks = scored
       .filter((p) => !p.in_theaters || p.platform)
-      .map((p) => ({
-        ...p,
-        combined_score: calculateCombinedScore(p.imdb_score, p.rt_score, p.tmdb_vote_average, p.tmdb_vote_count),
-      }))
+      .map((p) => {
+        const score = calculateScoreDetails(
+          p.imdb_score,
+          p.rt_score,
+          p.tmdb_vote_average,
+          p.tmdb_vote_count,
+          p.imdb_vote_count,
+        )
+        return {
+          ...p,
+          ...score,
+          momentum_boost: calculateMomentumBoost(
+            p,
+            score.combined_score,
+            p.imdb_vote_count,
+            p.tmdb_vote_count,
+          ),
+        }
+      })
 
     const beforeQuality = simmeredPicks.length
     simmeredPicks = simmeredPicks.filter(isTopRatedCandidate)
     const qualityDropped = beforeQuality - simmeredPicks.length
-    if (qualityDropped > 0) console.log(`  Top Rated quality filter: removed ${qualityDropped} unscored picks`)
+    if (qualityDropped > 0) {
+      console.log(`  Top Rated quality filter: removed ${qualityDropped} unscored, sub-${MIN_TOP_RATED_SCORE}, or low-confidence picks`)
+    }
 
     // Recency-aware sort: newer scored picks beat older near-ties.
     simmeredPicks = simmeredPicks
@@ -499,7 +666,7 @@ async function generateGuide() {
     console.log(`  Scored: ${withScores.length}/${simmeredPicks.length}`)
     for (const p of simmeredPicks.slice(0, 5)) {
       const score = p.combined_score !== null ? p.combined_score : 'unscored'
-      console.log(`    #${p.rank} ${p.title} (${p.year}) — ${score}`)
+      console.log(`    #${p.rank} ${p.title} (${p.year}) — ${score} (${p.score_confidence})`)
     }
   } else {
     console.log('  No previous week data — skipping simmered cohort.')
@@ -535,7 +702,15 @@ async function generateGuide() {
   return { guideId, week_of, total }
 }
 
-module.exports = { generateGuide, rankPicks, calculateCombinedScore }
+module.exports = {
+  generateGuide,
+  rankPicks,
+  bayesianScore,
+  calculateCombinedScore,
+  calculateScoreDetails,
+  scoreReturningPick,
+  isTopRatedCandidate,
+}
 
 // Run standalone
 if (require.main === module) {

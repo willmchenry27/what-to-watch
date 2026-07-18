@@ -16,7 +16,12 @@ const RECENCY_WEIGHT_PER_WEEK = 1.5
 
 export function topRatedSortScore(pick, currentWeekStr) {
   if (pick.combined_score == null) return -Infinity
-  if (pick.cohort === 'returning' || !pick.first_seen_week || !currentWeekStr) {
+  // Season-level scores are real signal about THIS season — no decay. A
+  // series-level fallback score is inherited goodwill, so it decays.
+  if (pick.cohort === 'returning' && pick.score_source === 'season') {
+    return pick.combined_score
+  }
+  if (!pick.first_seen_week || !currentWeekStr) {
     return pick.combined_score
   }
   const ms = new Date(currentWeekStr).getTime() - new Date(pick.first_seen_week).getTime()

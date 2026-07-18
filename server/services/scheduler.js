@@ -56,10 +56,21 @@ async function runPipeline({ sendEmail = true } = {}) {
     const { guide, picks } = await loadGuideData(guideId)
 
     console.log(`\nSending to ${recipients.length} recipient(s)`)
+    const failures = []
     for (const recipient of recipients) {
-      const hiddenIds = await getHiddenTmdbIdsForRecipient(recipient)
-      const unseen = picks.filter((p) => !hiddenIds.has(p.tmdb_id))
-      await sendWeeklyEmailToRecipient(guide, unseen, recipient)
+      try {
+        const hiddenIds = await getHiddenTmdbIdsForRecipient(recipient)
+        const unseen = picks.filter((p) => !hiddenIds.has(p.tmdb_id))
+        await sendWeeklyEmailToRecipient(guide, unseen, recipient)
+        console.log(`  ✓ ${recipient}`)
+      } catch (err) {
+        // Keep going — one bad recipient must not block the rest of the list
+        console.error(`  ✗ ${recipient}: ${err.message}`)
+        failures.push(recipient)
+      }
+    }
+    if (failures.length > 0) {
+      throw new Error(`Failed to send to ${failures.length}/${recipients.length} recipient(s): ${failures.join(', ')}`)
     }
 
     console.log(`\n[${new Date().toISOString()}] Pipeline complete — guide + ${recipients.length} email(s) sent.\n`)

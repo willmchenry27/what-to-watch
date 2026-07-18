@@ -94,6 +94,9 @@ async function migrate() {
   if (!cols.find((c) => c.name === 'first_seen_week')) {
     stmts.push('ALTER TABLE picks ADD COLUMN first_seen_week TEXT')
   }
+  if (!cols.find((c) => c.name === 'popularity')) {
+    stmts.push('ALTER TABLE picks ADD COLUMN popularity REAL')
+  }
 
   // Drop legacy user_actions table if it exists — data is unscoped and cannot be
   // safely mapped to recipients

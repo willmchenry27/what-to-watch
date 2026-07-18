@@ -11,7 +11,7 @@ async function omdbLookupById(imdbId) {
   url.searchParams.set('apikey', OMDB_KEY)
   url.searchParams.set('i', imdbId)
 
-  const res = await fetch(url.toString())
+  const res = await fetch(url.toString(), { signal: AbortSignal.timeout(15000) })
   if (!res.ok) return { imdb_score: null, rt_score: null }
 
   const data = await res.json()

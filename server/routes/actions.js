@@ -16,17 +16,44 @@ function invalidLinkHtml() {
 </body></html>`
 }
 
-function confirmationHtml(title, message, undoUrl, openAppUrl) {
+// HTML-escape every dynamic value rendered into a page. Titles come from TMDB
+// and route params are attacker-influenced strings — never interpolate raw.
+function esc(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+const GOLD_BTN = 'display:inline-block;padding:8px 20px;background:#c9a84c;color:#0a0a0c;border:none;border-radius:6px;text-decoration:none;font-size:13px;font-weight:600;font-family:inherit;cursor:pointer;'
+const GREY_BTN = 'display:inline-block;padding:8px 20px;background:rgba(255,255,255,0.08);color:#f5f0e8;border:1px solid rgba(255,255,255,0.1);border-radius:6px;text-decoration:none;font-size:13px;font-family:inherit;cursor:pointer;'
+
+function pageHtml(title, message, actionsHtml) {
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>What to Watch</title></head>
 <body style="margin:0;padding:40px 20px;background:#0a0a0c;color:#f5f0e8;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;text-align:center;">
-<h2 style="color:#c9a84c;margin-bottom:8px;">${title}</h2>
-<p style="color:#888;font-size:14px;">${message}</p>
-<div style="margin-top:16px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
-  ${undoUrl ? `<a href="${undoUrl}" style="display:inline-block;padding:8px 20px;background:rgba(255,255,255,0.08);color:#f5f0e8;border-radius:6px;text-decoration:none;font-size:13px;border:1px solid rgba(255,255,255,0.1);">Undo</a>` : ''}
-  ${openAppUrl ? `<a href="${openAppUrl}" style="display:inline-block;padding:8px 20px;background:#c9a84c;color:#0a0a0c;border-radius:6px;text-decoration:none;font-size:13px;font-weight:600;">Open What to Watch</a>` : ''}
+<h2 style="color:#c9a84c;margin-bottom:8px;">${esc(title)}</h2>
+<p style="color:#888;font-size:14px;">${esc(message)}</p>
+<div style="margin-top:16px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap;align-items:center;">
+${actionsHtml}
 </div>
 </body></html>`
+}
+
+// Prompt page: the GET link from the email lands here and nothing is written
+// until the human presses the button (a POST). Mail scanners prefetch GETs.
+function confirmPromptHtml(title, message, confirmAction, confirmLabel, openAppUrl) {
+  return pageHtml(title, message, `
+  <form method="POST" action="${esc(confirmAction)}" style="display:inline;margin:0;"><button type="submit" style="${GOLD_BTN}">${esc(confirmLabel)}</button></form>
+  ${openAppUrl ? `<a href="${esc(openAppUrl)}" style="${GREY_BTN}">Open What to Watch</a>` : ''}`)
+}
+
+function confirmationHtml(title, message, undoFormAction, openAppUrl) {
+  return pageHtml(title, message, `
+  ${undoFormAction ? `<form method="POST" action="${esc(undoFormAction)}" style="display:inline;margin:0;"><button type="submit" style="${GREY_BTN}">Undo</button></form>` : ''}
+  ${openAppUrl ? `<a href="${esc(openAppUrl)}" style="${GOLD_BTN}">Open What to Watch</a>` : ''}`)
 }
 
 function requireHeaderToken(req, res) {
@@ -56,30 +83,34 @@ router.post('/', async (req, res) => {
 
   const { tmdb_id, action_type } = req.body
 
-  if (!tmdb_id || !action_type) {
+  if (tmdb_id == null || !action_type) {
     return res.status(400).json({ error: 'tmdb_id and action_type are required' })
   }
   if (!VALID_ACTIONS.includes(action_type)) {
     return res.status(400).json({ error: `action_type must be one of: ${VALID_ACTIONS.join(', ')}` })
   }
+  const id = Number(tmdb_id)
+  if (!Number.isInteger(id) || id <= 0) {
+    return res.status(400).json({ error: 'tmdb_id must be a positive integer' })
+  }
 
   const db = await getDb()
   const existing = (await db.execute({
     sql: 'SELECT id FROM recipient_actions WHERE recipient_email = ? AND tmdb_id = ? AND action_type = ?',
-    args: [recipient, tmdb_id, action_type],
+    args: [recipient, id, action_type],
   })).rows[0]
 
   if (existing) {
     await db.execute({ sql: 'DELETE FROM recipient_actions WHERE id = ?', args: [existing.id] })
-    return res.json({ tmdb_id, action_type, active: false })
+    return res.json({ tmdb_id: id, action_type, active: false })
   }
 
   await db.execute({
     sql: 'INSERT INTO recipient_actions (recipient_email, tmdb_id, action_type) VALUES (?, ?, ?)',
-    args: [recipient, tmdb_id, action_type],
+    args: [recipient, id, action_type],
   })
 
-  res.json({ tmdb_id, action_type, active: true })
+  res.json({ tmdb_id: id, action_type, active: true })
 })
 
 // GET /api/actions — all active actions for this recipient (hydrate frontend)
@@ -129,79 +160,142 @@ router.get('/saved', async (req, res) => {
   res.json(picks)
 })
 
-// GET /api/actions/:action_type/:tmdb_id?r=<token> — email link click (records + returns HTML)
+const ACTION_PROMPTS = {
+  seen: 'Hide this from your future emails?',
+  dismiss: 'Hide this from your future emails?',
+  save: 'Add this to your pull list?',
+}
+const ACTION_PROMPT_LABELS = { seen: 'Seen it', dismiss: 'Not for me', save: 'Save it' }
+const ACTION_DONE_LABELS = { seen: 'Marked as seen', dismiss: 'Dismissed', save: 'Saved' }
+const ACTION_DONE_MESSAGES = {
+  seen: "Got it — we'll hide this from your future emails.",
+  dismiss: "Got it — we'll hide this from your future emails.",
+  save: 'Saved to your pull list.',
+}
+
+// Shared validation for the email-link routes. Returns null after responding
+// if anything is off; otherwise { id, displayTitle }.
+async function resolveEmailActionTarget(req, res) {
+  const { action_type } = req.params
+  if (!['seen', 'dismiss', 'save'].includes(action_type)) {
+    res.status(400).send('Invalid action')
+    return null
+  }
+
+  const id = parseInt(req.params.tmdb_id, 10)
+  if (isNaN(id) || id <= 0) {
+    res.status(400).send('Invalid tmdb_id')
+    return null
+  }
+
+  const db = await getDb()
+  const pick = (await db.execute({
+    sql: 'SELECT title FROM picks WHERE tmdb_id = ? ORDER BY id DESC LIMIT 1',
+    args: [id],
+  })).rows[0]
+  return { id, displayTitle: pick ? pick.title : `Title #${id}` }
+}
+
+// GET /api/actions/:action_type/:tmdb_id?r=<token> — email link click.
+// Deliberately read-only: mail scanners and link-preview bots prefetch GET
+// links, so the write only happens on the POST below (a human button press).
 router.get('/:action_type/:tmdb_id', async (req, res) => {
   const recipient = requireQueryToken(req, res)
   if (!recipient) return
 
-  const { action_type, tmdb_id } = req.params
-  if (!['seen', 'dismiss', 'save'].includes(action_type)) {
-    return res.status(400).send('Invalid action')
-  }
+  const target = await resolveEmailActionTarget(req, res)
+  if (!target) return
+  const { action_type } = req.params
 
-  const db = await getDb()
-  const id = parseInt(tmdb_id, 10)
-  if (isNaN(id)) return res.status(400).send('Invalid tmdb_id')
-
-  const pick = (await db.execute({
-    sql: 'SELECT title FROM picks WHERE tmdb_id = ? ORDER BY id DESC LIMIT 1',
-    args: [id],
-  })).rows[0]
-  const displayTitle = pick ? pick.title : `Title #${tmdb_id}`
-
-  const existing = (await db.execute({
-    sql: 'SELECT id FROM recipient_actions WHERE recipient_email = ? AND tmdb_id = ? AND action_type = ?',
-    args: [recipient, id, action_type],
-  })).rows[0]
-  if (!existing) {
-    await db.execute({
-      sql: 'INSERT INTO recipient_actions (recipient_email, tmdb_id, action_type) VALUES (?, ?, ?)',
-      args: [recipient, id, action_type],
-    })
-  }
-
-  const labels = { seen: 'Marked as seen', dismiss: 'Dismissed', save: 'Saved' }
-  const messages = {
-    seen: "Got it — we'll hide this from your future emails.",
-    dismiss: "Got it — we'll hide this from your future emails.",
-    save: 'Saved to your pull list.',
-  }
   const { apiPublicUrl, appUrl } = getEmailPublicUrls()
   const token = encodeURIComponent(req.query.r)
-  const undoUrl = `${apiPublicUrl}/api/actions/undo/${action_type}/${tmdb_id}?r=${token}`
+  const confirmAction = `${apiPublicUrl}/api/actions/${action_type}/${target.id}?r=${token}`
   const openAppUrl = appUrlWithRecipientToken(appUrl, req.query.r)
 
-  res.send(confirmationHtml(
-    `${labels[action_type]}: ${displayTitle}`,
-    messages[action_type],
-    undoUrl,
+  res.send(confirmPromptHtml(
+    `${ACTION_PROMPT_LABELS[action_type]}: ${target.displayTitle}`,
+    ACTION_PROMPTS[action_type],
+    confirmAction,
+    `Confirm — ${ACTION_PROMPT_LABELS[action_type].toLowerCase()}`,
     openAppUrl
   ))
 })
 
-// GET /api/actions/undo/:action_type/:tmdb_id?r=<token>
+// POST /api/actions/:action_type/:tmdb_id?r=<token> — records the action
+router.post('/:action_type/:tmdb_id', async (req, res) => {
+  const recipient = requireQueryToken(req, res)
+  if (!recipient) return
+
+  const target = await resolveEmailActionTarget(req, res)
+  if (!target) return
+  const { action_type } = req.params
+
+  const db = await getDb()
+  const existing = (await db.execute({
+    sql: 'SELECT id FROM recipient_actions WHERE recipient_email = ? AND tmdb_id = ? AND action_type = ?',
+    args: [recipient, target.id, action_type],
+  })).rows[0]
+  if (!existing) {
+    await db.execute({
+      sql: 'INSERT INTO recipient_actions (recipient_email, tmdb_id, action_type) VALUES (?, ?, ?)',
+      args: [recipient, target.id, action_type],
+    })
+  }
+
+  const { apiPublicUrl, appUrl } = getEmailPublicUrls()
+  const token = encodeURIComponent(req.query.r)
+  const undoFormAction = `${apiPublicUrl}/api/actions/undo/${action_type}/${target.id}?r=${token}`
+  const openAppUrl = appUrlWithRecipientToken(appUrl, req.query.r)
+
+  res.send(confirmationHtml(
+    `${ACTION_DONE_LABELS[action_type]}: ${target.displayTitle}`,
+    ACTION_DONE_MESSAGES[action_type],
+    undoFormAction,
+    openAppUrl
+  ))
+})
+
+// GET /api/actions/undo/:action_type/:tmdb_id?r=<token> — read-only prompt
+// (kept as GET so Undo links in already-delivered pages still resolve).
 router.get('/undo/:action_type/:tmdb_id', async (req, res) => {
   const recipient = requireQueryToken(req, res)
   if (!recipient) return
 
-  const { action_type, tmdb_id } = req.params
-  if (!['seen', 'dismiss', 'save'].includes(action_type)) {
-    return res.status(400).send('Invalid action')
-  }
+  const target = await resolveEmailActionTarget(req, res)
+  if (!target) return
+  const { action_type } = req.params
+
+  const { apiPublicUrl, appUrl } = getEmailPublicUrls()
+  const token = encodeURIComponent(req.query.r)
+  const confirmAction = `${apiPublicUrl}/api/actions/undo/${action_type}/${target.id}?r=${token}`
+  const openAppUrl = appUrlWithRecipientToken(appUrl, req.query.r)
+
+  const prompt = action_type === 'save'
+    ? 'Remove this from your saved list?'
+    : 'Show this title in your future emails again?'
+
+  res.send(confirmPromptHtml(
+    `Undo: ${target.displayTitle}`,
+    prompt,
+    confirmAction,
+    'Undo',
+    openAppUrl
+  ))
+})
+
+// POST /api/actions/undo/:action_type/:tmdb_id?r=<token> — removes the action
+router.post('/undo/:action_type/:tmdb_id', async (req, res) => {
+  const recipient = requireQueryToken(req, res)
+  if (!recipient) return
+
+  const target = await resolveEmailActionTarget(req, res)
+  if (!target) return
+  const { action_type } = req.params
 
   const db = await getDb()
-  const id = parseInt(tmdb_id, 10)
-  if (isNaN(id)) return res.status(400).send('Invalid tmdb_id')
-
-  const pick = (await db.execute({
-    sql: 'SELECT title FROM picks WHERE tmdb_id = ? ORDER BY id DESC LIMIT 1',
-    args: [id],
-  })).rows[0]
-  const displayTitle = pick ? pick.title : `Title #${tmdb_id}`
-
   await db.execute({
     sql: 'DELETE FROM recipient_actions WHERE recipient_email = ? AND tmdb_id = ? AND action_type = ?',
-    args: [recipient, id, action_type],
+    args: [recipient, target.id, action_type],
   })
 
   const undoMessage = action_type === 'save'
@@ -211,7 +305,7 @@ router.get('/undo/:action_type/:tmdb_id', async (req, res) => {
   const openAppUrl = appUrlWithRecipientToken(appUrl, req.query.r)
 
   res.send(confirmationHtml(
-    `Restored: ${displayTitle}`,
+    `Restored: ${target.displayTitle}`,
     undoMessage,
     null,
     openAppUrl

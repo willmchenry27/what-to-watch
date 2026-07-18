@@ -30,7 +30,7 @@ export function TvHomeScreen() {
   if (status === 'error') return <TvError message={error} />
 
   const weekLabel = guide?.week_of
-    ? new Date(guide.week_of).toLocaleDateString(undefined, {
+    ? new Date(guide.week_of + 'T00:00:00').toLocaleDateString(undefined, {
         month: 'long',
         day: 'numeric',
         year: 'numeric',

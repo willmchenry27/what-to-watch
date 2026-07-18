@@ -29,6 +29,7 @@ function formatGuide(guide, picks) {
       director: p.director || undefined,
       in_theaters: Boolean(p.in_theaters),
       cohort: p.cohort || 'fresh',
+      popularity: p.popularity ?? undefined,
       season_vote_average: p.season_vote_average ?? undefined,
       season_vote_count: p.season_vote_count ?? undefined,
       score_source: p.score_source || undefined,

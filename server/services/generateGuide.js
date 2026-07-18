@@ -12,7 +12,11 @@ const RECENCY_WEIGHT_PER_WEEK = 1.5
 
 function topRatedSortScore(pick, currentWeekStr) {
   if (pick.combined_score == null) return -Infinity
-  if (pick.cohort === 'returning' || !pick.first_seen_week) return pick.combined_score
+  // Season-level scores are real signal about THIS season — no decay. A
+  // series-level fallback score is inherited goodwill (SpongeBob S17 riding
+  // the series' lifetime IMDb rating), so it decays like everything else.
+  if (pick.cohort === 'returning' && pick.score_source === 'season') return pick.combined_score
+  if (!pick.first_seen_week) return pick.combined_score
   const ms = new Date(currentWeekStr).getTime() - new Date(pick.first_seen_week).getTime()
   const ageWeeks = Math.max(0, ms / (7 * 24 * 60 * 60 * 1000))
   return pick.combined_score - ageWeeks * RECENCY_WEIGHT_PER_WEEK
@@ -103,8 +107,9 @@ function getPastGuideIds(weeks) {
   const fmt = (d) => d.toISOString().split('T')[0]
   const ids = []
   for (let w = 1; w <= weeks; w++) {
-    const sat = new Date(dw.gte + 'T00:00:00')
-    sat.setDate(sat.getDate() - (w * 7))
+    // Parse and step in UTC so the id stays on the Saturday grid in any host TZ
+    const sat = new Date(dw.gte + 'T00:00:00Z')
+    sat.setUTCDate(sat.getUTCDate() - (w * 7))
     ids.push(`guide-${fmt(sat)}`)
   }
   return ids
@@ -170,7 +175,7 @@ async function loadSimmeredCandidates() {
     cast: JSON.parse(p.cast_list),
     director: p.director,
     in_theaters: Boolean(p.in_theaters),
-    popularity: 0,
+    popularity: p.popularity ?? 0,
     tmdb_vote_average: p.tmdb_vote_average,
     tmdb_vote_count: p.tmdb_vote_count,
     // Use the OLDEST guide_id for this tmdb_id so age reflects the original
@@ -191,52 +196,65 @@ async function loadReturningCandidates() {
     })
     if (result.rows.length > 0) {
       console.log(`  Found ${result.rows.length} returning picks from ${guideId}`)
-      allRows.push(...result.rows)
+      allRows.push(...result.rows.map((r) => ({ ...r, _guideId: guideId })))
     }
   }
 
   if (allRows.length === 0) return []
 
-  // Dedup by (tmdb_id, season) — keep the newer row (older guide IDs come last)
+  // Dedup by (tmdb_id, season) — keep the newer row (older guide IDs come last),
+  // but track the OLDEST guide each season appears in so first_seen_week
+  // reflects the season's premiere week. Without this it resets on every
+  // weekly re-save and returning picks never age out of Top Rated.
   const seen = new Map()
+  const oldestGuideId = new Map()
   for (const row of allRows) {
     const key = `${row.tmdb_id}-${row.season}`
     if (!seen.has(key)) seen.set(key, row)
+    const prev = oldestGuideId.get(key)
+    if (!prev || row._guideId < prev) oldestGuideId.set(key, row._guideId)
   }
   const deduped = [...seen.values()]
   const dupes = allRows.length - deduped.length
   if (dupes > 0) console.log(`  Deduped: removed ${dupes} returning picks across weeks`)
   console.log(`  Total returning candidates to re-score: ${deduped.length}`)
 
-  return deduped.map((p) => ({
-    tmdb_id: p.tmdb_id,
-    imdb_id: p.imdb_id || null,
-    title: p.title,
-    year: p.year,
-    type: p.type,
-    season: p.season,
-    genres: JSON.parse(p.genres),
-    description: p.description,
-    platform: p.platform,
-    platform_slug: p.platform_slug,
-    availability: p.availability,
-    poster_path: p.poster_path,
-    backdrop_path: p.backdrop_path,
-    cast: JSON.parse(p.cast_list),
-    director: p.director,
-    in_theaters: Boolean(p.in_theaters),
-    popularity: 0,
-    tmdb_vote_average: p.tmdb_vote_average,
-    tmdb_vote_count: p.tmdb_vote_count,
-  }))
+  return deduped.map((p) => {
+    // Oldest appearance within the lookback window; a stored value can only be
+    // older (carried forward from before the window), so prefer the minimum.
+    const derived = oldestGuideId.get(`${p.tmdb_id}-${p.season}`).replace(/^guide-/, '')
+    const stored = p.first_seen_week || null
+    return {
+      tmdb_id: p.tmdb_id,
+      imdb_id: p.imdb_id || null,
+      title: p.title,
+      year: p.year,
+      type: p.type,
+      season: p.season,
+      genres: JSON.parse(p.genres),
+      description: p.description,
+      platform: p.platform,
+      platform_slug: p.platform_slug,
+      availability: p.availability,
+      poster_path: p.poster_path,
+      backdrop_path: p.backdrop_path,
+      cast: JSON.parse(p.cast_list),
+      director: p.director,
+      in_theaters: Boolean(p.in_theaters),
+      popularity: p.popularity ?? 0,
+      tmdb_vote_average: p.tmdb_vote_average,
+      tmdb_vote_count: p.tmdb_vote_count,
+      first_seen_week: stored && stored < derived ? stored : derived,
+    }
+  })
 }
 
 async function saveToDatabase(weekOf, freshPicks, simmeredPicks, returningPicks = []) {
   const db = await getDb()
   const guideId = `guide-${weekOf}`
 
-  const pickSql = `INSERT INTO picks (guide_id, rank, tmdb_id, imdb_id, title, year, type, season, genres, description, imdb_score, rt_score, combined_score, platform, platform_slug, availability, poster_path, backdrop_path, cast_list, director, in_theaters, cohort, tmdb_vote_average, tmdb_vote_count, season_vote_average, season_vote_count, score_source, first_seen_week)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  const pickSql = `INSERT INTO picks (guide_id, rank, tmdb_id, imdb_id, title, year, type, season, genres, description, imdb_score, rt_score, combined_score, platform, platform_slug, availability, poster_path, backdrop_path, cast_list, director, in_theaters, cohort, tmdb_vote_average, tmdb_vote_count, season_vote_average, season_vote_count, score_source, first_seen_week, popularity)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
   function pickArgs(p, cohort) {
     return [
@@ -250,11 +268,15 @@ async function saveToDatabase(weekOf, freshPicks, simmeredPicks, returningPicks 
       p.tmdb_vote_average ?? null, p.tmdb_vote_count ?? null,
       p.season_vote_average ?? null, p.season_vote_count ?? null, p.score_source ?? null,
       p.first_seen_week || weekOf,
+      p.popularity ?? null,
     ]
   }
 
   const statements = [
-    { sql: 'INSERT OR REPLACE INTO weekly_guides (id, week_of, generated_at) VALUES (?, ?, ?)', args: [guideId, weekOf, new Date().toISOString()] },
+    // Upsert instead of INSERT OR REPLACE: REPLACE deletes+reinserts the parent
+    // row, which fails the picks FK on the weekly re-save wherever foreign_keys
+    // enforcement is actually active (local file, embedded replica).
+    { sql: 'INSERT INTO weekly_guides (id, week_of, generated_at) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET week_of = excluded.week_of, generated_at = excluded.generated_at', args: [guideId, weekOf, new Date().toISOString()] },
     { sql: 'DELETE FROM picks WHERE guide_id = ?', args: [guideId] },
     ...freshPicks.map((p) => ({ sql: pickSql, args: pickArgs(p, 'fresh') })),
     ...simmeredPicks.map((p) => ({ sql: pickSql, args: pickArgs(p, 'simmered') })),
@@ -414,7 +436,7 @@ async function generateGuide() {
         await Promise.all(batch.map(async (p) => {
           const mediaType = p.type === 'tv' ? 'tv' : 'movie'
           try {
-            const res = await fetch(`https://api.themoviedb.org/3/${mediaType}/${p.tmdb_id}?api_key=${process.env.TMDB_API_KEY}`)
+            const res = await fetch(`https://api.themoviedb.org/3/${mediaType}/${p.tmdb_id}?api_key=${process.env.TMDB_API_KEY}`, { signal: AbortSignal.timeout(15000) })
             if (res.ok) {
               const data = await res.json()
               p.tmdb_vote_average = data.vote_average ?? p.tmdb_vote_average

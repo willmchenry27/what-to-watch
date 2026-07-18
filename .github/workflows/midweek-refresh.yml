@@ -2,7 +2,8 @@ name: Midweek Guide Refresh
 
 on:
   schedule:
-    # Every Tuesday at 2:00 PM ET (18:00 UTC)
+    # Every Tuesday at 18:00 UTC — 2:00 PM ET during EDT, 1:00 PM ET during EST
+    # (GitHub cron is UTC-only and does not follow DST)
     - cron: '0 18 * * 2'
   workflow_dispatch: # Manual trigger for testing
 
@@ -21,7 +22,7 @@ jobs:
 
       - name: Install server dependencies
         working-directory: server
-        run: npm install
+        run: npm ci
 
       - name: Run pipeline (refresh-only)
         env:

@@ -34,6 +34,17 @@ function validateEmailEnv() {
   getEmailPublicUrls()
 }
 
+// HTML-escape dynamic values (titles/descriptions come from TMDB and can
+// contain markup characters that would break or inject into the email HTML).
+function esc(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
 function scoreColor(value) {
   if (value >= 80) return '#34d399'
   if (value >= 60) return '#fbbf24'
@@ -61,7 +72,7 @@ function buildPickRow(pick, rank, showScore, token) {
   const rt = showScore && pick.rt_score != null ? `RT <span style="color:${scoreColor(pick.rt_score)};font-weight:600;">${pick.rt_score}%</span>` : ''
   const tmdb = showScore && !imdb && !rt && pick.tmdb_vote_average != null ? `TMDB <span style="color:${scoreColor(pick.tmdb_vote_average * 10)};font-weight:600;">${Math.round(pick.tmdb_vote_average * 10) / 10}</span>` : ''
   const scores = [imdb, rt, tmdb].filter(Boolean).join(' &nbsp;&middot;&nbsp; ')
-  const platform = pick.platform ? `<span style="display:inline-block;background:rgba(255,255,255,0.08);color:#ccc;font-size:10px;font-weight:600;padding:2px 8px;border-radius:4px;text-transform:uppercase;letter-spacing:0.5px;">${pick.platform}</span>` : ''
+  const platform = pick.platform ? `<span style="display:inline-block;background:rgba(255,255,255,0.08);color:#ccc;font-size:10px;font-weight:600;padding:2px 8px;border-radius:4px;text-transform:uppercase;letter-spacing:0.5px;">${esc(pick.platform)}</span>` : ''
 
   return `
     <tr>
@@ -72,8 +83,8 @@ function buildPickRow(pick, rank, showScore, token) {
               <span style="display:inline-block;width:32px;height:32px;line-height:32px;text-align:center;border-radius:50%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:#c9a84c;font-weight:700;font-size:13px;">#${rank}</span>
             </td>
             <td style="vertical-align:top;">
-              <div style="font-size:16px;font-weight:700;color:#f5f0e8;margin-bottom:4px;">${tmdbUrl(pick) ? `<a href="${tmdbUrl(pick)}" style="color:#f5f0e8;text-decoration:none;">${pick.title}</a>` : pick.title}${pick.season ? ` <span style="color:#888;font-weight:600;">S${pick.season}</span>` : ''}</div>
-              <div style="font-size:12px;color:#888;margin-bottom:${scores ? '6' : '0'}px;">${(pick.genres || []).slice(0, 3).join(', ')} ${platform ? '&nbsp;&middot;&nbsp;' + platform : ''}</div>
+              <div style="font-size:16px;font-weight:700;color:#f5f0e8;margin-bottom:4px;">${tmdbUrl(pick) ? `<a href="${tmdbUrl(pick)}" style="color:#f5f0e8;text-decoration:none;">${esc(pick.title)}</a>` : esc(pick.title)}${pick.season ? ` <span style="color:#888;font-weight:600;">S${pick.season}</span>` : ''}</div>
+              <div style="font-size:12px;color:#888;margin-bottom:${scores ? '6' : '0'}px;">${esc((pick.genres || []).slice(0, 3).join(', '))} ${platform ? '&nbsp;&middot;&nbsp;' + platform : ''}</div>
               ${scores ? `<div style="font-size:12px;color:#999;">${scores}</div>` : ''}
               ${actionLinks(pick, token)}
             </td>
@@ -88,7 +99,10 @@ const RECENCY_WEIGHT_PER_WEEK = 1.5
 
 function topRatedSortScore(pick, currentWeekStr) {
   if (pick.combined_score == null) return -Infinity
-  if (pick.cohort === 'returning' || !pick.first_seen_week) return pick.combined_score
+  // Season-level scores are real signal about THIS season — no decay. A
+  // series-level fallback score is inherited goodwill, so it decays.
+  if (pick.cohort === 'returning' && pick.score_source === 'season') return pick.combined_score
+  if (!pick.first_seen_week) return pick.combined_score
   const ms = new Date(currentWeekStr).getTime() - new Date(pick.first_seen_week).getTime()
   const ageWeeks = Math.max(0, ms / (7 * 24 * 60 * 60 * 1000))
   return pick.combined_score - ageWeeks * RECENCY_WEIGHT_PER_WEEK
@@ -126,13 +140,13 @@ function buildEmailHtml(guide, allPicks, token) {
     <tr>
       <td style="padding:0 0 24px;">
         <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:#111114;border-radius:12px;overflow:hidden;border:1px solid rgba(255,255,255,0.06);">
-          ${freshHeroImage ? `<tr><td><img src="${freshHeroImage}" alt="${freshHero.title}" width="600" style="display:block;width:100%;height:auto;max-height:240px;object-fit:cover;" /></td></tr>` : ''}
+          ${freshHeroImage ? `<tr><td><img src="${freshHeroImage}" alt="${esc(freshHero.title)}" width="600" style="display:block;width:100%;height:auto;max-height:240px;object-fit:cover;" /></td></tr>` : ''}
           <tr>
             <td style="padding:20px 24px;">
               <p style="margin:0 0 6px;font-size:11px;font-weight:700;color:#c9a84c;text-transform:uppercase;letter-spacing:2px;">Featured Fresh Drop</p>
-              <h2 style="margin:0 0 6px;font-size:24px;font-weight:800;color:#f5f0e8;">${tmdbUrl(freshHero) ? `<a href="${tmdbUrl(freshHero)}" style="color:#f5f0e8;text-decoration:none;">${freshHero.title}</a>` : freshHero.title}${freshHero.season ? ` <span style="color:#888;font-weight:600;">S${freshHero.season}</span>` : ''}</h2>
-              <p style="margin:0 0 10px;font-size:13px;color:#888;">${(freshHero.genres || []).join(', ')}${freshHero.platform ? ' &middot; ' + freshHero.platform : ''}</p>
-              ${freshHero.description ? `<p style="margin:0 0 10px;font-size:13px;line-height:1.5;color:#aaa;">${freshHero.description.slice(0, 200)}${freshHero.description.length > 200 ? '...' : ''}</p>` : ''}
+              <h2 style="margin:0 0 6px;font-size:24px;font-weight:800;color:#f5f0e8;">${tmdbUrl(freshHero) ? `<a href="${tmdbUrl(freshHero)}" style="color:#f5f0e8;text-decoration:none;">${esc(freshHero.title)}</a>` : esc(freshHero.title)}${freshHero.season ? ` <span style="color:#888;font-weight:600;">S${freshHero.season}</span>` : ''}</h2>
+              <p style="margin:0 0 10px;font-size:13px;color:#888;">${esc((freshHero.genres || []).join(', '))}${freshHero.platform ? ' &middot; ' + esc(freshHero.platform) : ''}</p>
+              ${freshHero.description ? `<p style="margin:0 0 10px;font-size:13px;line-height:1.5;color:#aaa;">${esc(freshHero.description.slice(0, 200))}${freshHero.description.length > 200 ? '...' : ''}</p>` : ''}
               ${actionLinks(freshHero, token)}
             </td>
           </tr>
@@ -155,14 +169,14 @@ function buildEmailHtml(guide, allPicks, token) {
     <tr>
       <td style="padding:0 0 24px;">
         <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:#111114;border-radius:12px;overflow:hidden;border:1px solid rgba(255,255,255,0.06);">
-          ${simHeroImage ? `<tr><td><img src="${simHeroImage}" alt="${simmeredHero.title}" width="600" style="display:block;width:100%;height:auto;max-height:240px;object-fit:cover;" /></td></tr>` : ''}
+          ${simHeroImage ? `<tr><td><img src="${simHeroImage}" alt="${esc(simmeredHero.title)}" width="600" style="display:block;width:100%;height:auto;max-height:240px;object-fit:cover;" /></td></tr>` : ''}
           <tr>
             <td style="padding:20px 24px;">
               <p style="margin:0 0 6px;font-size:11px;font-weight:700;color:#c9a84c;text-transform:uppercase;letter-spacing:2px;">Featured Top Rated</p>
-              <h2 style="margin:0 0 6px;font-size:24px;font-weight:800;color:#f5f0e8;">${tmdbUrl(simmeredHero) ? `<a href="${tmdbUrl(simmeredHero)}" style="color:#f5f0e8;text-decoration:none;">${simmeredHero.title}</a>` : simmeredHero.title}${simmeredHero.season ? ` <span style="color:#888;font-weight:600;">S${simmeredHero.season}</span>` : ''}</h2>
-              <p style="margin:0 0 10px;font-size:13px;color:#888;">${(simmeredHero.genres || []).join(', ')}${simmeredHero.platform ? ' &middot; ' + simmeredHero.platform : ''}</p>
+              <h2 style="margin:0 0 6px;font-size:24px;font-weight:800;color:#f5f0e8;">${tmdbUrl(simmeredHero) ? `<a href="${tmdbUrl(simmeredHero)}" style="color:#f5f0e8;text-decoration:none;">${esc(simmeredHero.title)}</a>` : esc(simmeredHero.title)}${simmeredHero.season ? ` <span style="color:#888;font-weight:600;">S${simmeredHero.season}</span>` : ''}</h2>
+              <p style="margin:0 0 10px;font-size:13px;color:#888;">${esc((simmeredHero.genres || []).join(', '))}${simmeredHero.platform ? ' &middot; ' + esc(simmeredHero.platform) : ''}</p>
               <div style="margin:0 0 12px;">${simScoreHtml}${simImdb}${simRt}${simTmdb}</div>
-              ${simmeredHero.description ? `<p style="margin:0 0 10px;font-size:13px;line-height:1.5;color:#aaa;">${simmeredHero.description.slice(0, 200)}${simmeredHero.description.length > 200 ? '...' : ''}</p>` : ''}
+              ${simmeredHero.description ? `<p style="margin:0 0 10px;font-size:13px;line-height:1.5;color:#aaa;">${esc(simmeredHero.description.slice(0, 200))}${simmeredHero.description.length > 200 ? '...' : ''}</p>` : ''}
               ${actionLinks(simmeredHero, token)}
             </td>
           </tr>

@@ -38,18 +38,28 @@ const TV_GENRES = {
 }
 
 function getDateWindow() {
-  const now = new Date()
+  // Anchor "today" to the product timezone (ET) so the window — and the
+  // guide-<saturday> id derived from it — is identical no matter where or at
+  // what hour the pipeline runs. The old local-time + toISOString mix shifted
+  // the window a day on evening local runs, producing off-grid guide ids that
+  // getPastGuideIds could never find again.
+  const nyDate = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date())
+  const [y, m, d] = nyDate.split('-').map(Number)
+  const today = new Date(Date.UTC(y, m - 1, d))
+
   // Find previous Saturday (start of window)
-  const day = now.getDay()
+  const day = today.getUTCDay()
   const satOffset = day >= 6 ? day - 6 : day + 1
-  const saturday = new Date(now)
-  saturday.setDate(now.getDate() - satOffset)
+  const saturday = new Date(today)
+  saturday.setUTCDate(today.getUTCDate() - satOffset)
 
   // Friday = Saturday + 6
   const friday = new Date(saturday)
-  friday.setDate(saturday.getDate() + 6)
+  friday.setUTCDate(saturday.getUTCDate() + 6)
 
-  const fmt = (d) => d.toISOString().split('T')[0]
+  const fmt = (dt) => dt.toISOString().split('T')[0]
   return { gte: fmt(saturday), lte: fmt(friday) }
 }
 
@@ -60,7 +70,7 @@ async function tmdbFetch(endpoint, params = {}) {
     url.searchParams.set(k, v)
   }
 
-  const res = await fetch(url.toString())
+  const res = await fetch(url.toString(), { signal: AbortSignal.timeout(15000) })
   if (!res.ok) {
     throw new Error(`TMDB ${endpoint} failed: ${res.status} ${res.statusText}`)
   }

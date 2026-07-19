@@ -95,18 +95,18 @@ router.post('/', async (req, res) => {
   }
 
   const db = await getDb()
-  const existing = (await db.execute({
-    sql: 'SELECT id FROM recipient_actions WHERE recipient_email = ? AND tmdb_id = ? AND action_type = ?',
+  // Atomic toggle: DELETE first, and if nothing was deleted, INSERT with
+  // ON CONFLICT DO NOTHING — a rapid double-tap must not 500 on the UNIQUE key.
+  const deleted = await db.execute({
+    sql: 'DELETE FROM recipient_actions WHERE recipient_email = ? AND tmdb_id = ? AND action_type = ?',
     args: [recipient, id, action_type],
-  })).rows[0]
-
-  if (existing) {
-    await db.execute({ sql: 'DELETE FROM recipient_actions WHERE id = ?', args: [existing.id] })
+  })
+  if (deleted.rowsAffected > 0) {
     return res.json({ tmdb_id: id, action_type, active: false })
   }
 
   await db.execute({
-    sql: 'INSERT INTO recipient_actions (recipient_email, tmdb_id, action_type) VALUES (?, ?, ?)',
+    sql: 'INSERT INTO recipient_actions (recipient_email, tmdb_id, action_type) VALUES (?, ?, ?) ON CONFLICT(recipient_email, tmdb_id, action_type) DO NOTHING',
     args: [recipient, id, action_type],
   })
 

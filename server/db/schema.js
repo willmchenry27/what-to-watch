@@ -3,17 +3,30 @@ require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') }
 const { createClient } = require('@libsql/client')
 
 let client
+let dbPromise = null
 
-async function getDb() {
-  if (!client) {
-    client = createClient({
-      url: process.env.TURSO_DATABASE_URL,
-      authToken: process.env.TURSO_AUTH_TOKEN,
+// Memoize the full init as a promise: concurrent first callers all wait for
+// tables + migrations, and a failed init is retried instead of handing out a
+// half-initialized client forever.
+function getDb() {
+  if (!dbPromise) {
+    dbPromise = initDb().catch((err) => {
+      dbPromise = null
+      client = undefined
+      throw err
     })
-    await client.execute('PRAGMA foreign_keys = ON')
-    await createTables()
-    await migrate()
   }
+  return dbPromise
+}
+
+async function initDb() {
+  client = createClient({
+    url: process.env.TURSO_DATABASE_URL,
+    authToken: process.env.TURSO_AUTH_TOKEN,
+  })
+  await client.execute('PRAGMA foreign_keys = ON')
+  await createTables()
+  await migrate()
   return client
 }
 

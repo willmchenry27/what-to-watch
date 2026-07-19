@@ -58,6 +58,7 @@ function tmdbUrl(pick) {
 }
 
 function actionLinks(pick, token) {
+  if (!pick.tmdb_id) return ''
   const { apiPublicUrl } = getEmailPublicUrls()
   const t = encodeURIComponent(token)
   const linkStyle = 'color:#999;font-size:11px;text-decoration:none;'
@@ -120,9 +121,8 @@ function buildEmailHtml(guide, allPicks, token) {
     p.cohort === 'simmered' || (p.cohort === 'returning' && p.combined_score != null)
   )
 
-  const freshHeroIdx = fresh.findIndex((p) => p.backdrop_path || p.poster_path)
-  const freshHero = freshHeroIdx >= 0 ? fresh[freshHeroIdx] : fresh[0]
-  const freshRunners = fresh.filter((_, i) => i !== freshHeroIdx).slice(0, 5)
+  const freshHero = fresh.find((p) => p.backdrop_path || p.poster_path) || fresh[0] || null
+  const freshRunners = fresh.filter((p) => p !== freshHero).slice(0, 5)
 
   // Top Rated: up to 10 total scored picks INCLUDING the hero. Slice first,
   // then pick hero from the limited list so runners + hero === simmeredTop.length.
@@ -154,7 +154,7 @@ function buildEmailHtml(guide, allPicks, token) {
       </td>
     </tr>` : ''
 
-  const freshRows = freshRunners.map((p, i) => buildPickRow(p, i + 2, false, token)).join('')
+  const freshRows = freshRunners.map((p) => buildPickRow(p, fresh.indexOf(p) + 1, false, token)).join('')
 
   // Simmered hero
   const simHeroImage = simmeredHero ? (simmeredHero.backdrop_path || simmeredHero.poster_path || '') : ''
@@ -184,7 +184,7 @@ function buildEmailHtml(guide, allPicks, token) {
       </td>
     </tr>` : ''
 
-  const simRows = simmeredRunners.map((p, i) => buildPickRow(p, i + 2, true, token)).join('')
+  const simRows = simmeredRunners.map((p) => buildPickRow(p, simmeredTop.indexOf(p) + 1, true, token)).join('')
 
   // Open app CTA (bootstraps web session with token)
   const openAppHref = appUrlWithRecipientToken(appUrl, token)

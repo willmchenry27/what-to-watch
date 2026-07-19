@@ -84,7 +84,13 @@ function startScheduler() {
   // Every Friday at 2:00 PM ET
   cron.schedule('0 14 * * 5', async () => {
     console.log('\n=== Friday cron triggered ===')
-    await runPipeline()
+    try {
+      await runPipeline()
+    } catch (err) {
+      // Swallow here — an unhandled rejection in the cron callback would kill
+      // the whole server process
+      console.error('Friday cron run failed:', err)
+    }
   }, {
     timezone: 'America/New_York',
   })

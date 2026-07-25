@@ -30,6 +30,27 @@ test('Top Rated requires both quality and confidence', () => {
   assert.equal(isTopRatedCandidate({ combined_score: 95, score_confidence: 'low' }), false)
 })
 
+test('Top Rated excludes kids, animated, and family genres', () => {
+  const qualifying = { combined_score: 85, score_confidence: 'high' }
+
+  assert.equal(
+    isTopRatedCandidate({ ...qualifying, genres: ['Animation', 'Comedy', 'Sci-Fi & Fantasy'] }),
+    false,
+  )
+  assert.equal(
+    isTopRatedCandidate({ ...qualifying, genres: ['Family', 'Adventure'] }),
+    false,
+  )
+  assert.equal(
+    isTopRatedCandidate({ ...qualifying, genres: ['Kids', 'Comedy'] }),
+    false,
+  )
+  assert.equal(
+    isTopRatedCandidate({ ...qualifying, genres: ['Drama', 'Thriller'] }),
+    true,
+  )
+})
+
 test('discovery candidates dedupe by media type and TMDB ID', () => {
   const merged = mergeDiscoveryCandidates([
     {

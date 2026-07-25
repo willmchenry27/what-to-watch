@@ -6,6 +6,7 @@ const { getDb } = require('../db/schema')
 
 const MIN_TMDB_VOTES = 5
 const MIN_TOP_RATED_SCORE = 70
+const EXCLUDED_TOP_RATED_GENRES = ['Animation', 'Family', 'Kids']
 const SIMMER_WEEKS = 8
 const RETURNING_WEEKS = 12
 const RECENCY_WEIGHT_PER_WEEK = 1.5
@@ -173,11 +174,16 @@ function isFreshDropCandidate(p) {
   return Boolean(p.title) && hasMeaningfulDescription(p) && hasGenres(p) && hasUsableImage(p) && (!p.in_theaters || p.platform)
 }
 
+function hasExcludedTopRatedGenre(p) {
+  return Array.isArray(p.genres) && p.genres.some((g) => EXCLUDED_TOP_RATED_GENRES.includes(g))
+}
+
 function isTopRatedCandidate(p) {
   return (
     p.combined_score != null &&
     p.combined_score >= MIN_TOP_RATED_SCORE &&
-    ['medium', 'high'].includes(p.score_confidence)
+    ['medium', 'high'].includes(p.score_confidence) &&
+    !hasExcludedTopRatedGenre(p)
   )
 }
 
@@ -652,7 +658,7 @@ async function generateGuide() {
     simmeredPicks = simmeredPicks.filter(isTopRatedCandidate)
     const qualityDropped = beforeQuality - simmeredPicks.length
     if (qualityDropped > 0) {
-      console.log(`  Top Rated quality filter: removed ${qualityDropped} unscored, sub-${MIN_TOP_RATED_SCORE}, or low-confidence picks`)
+      console.log(`  Top Rated quality filter: removed ${qualityDropped} unscored, sub-${MIN_TOP_RATED_SCORE}, low-confidence, or excluded-genre (kids/animated/family) picks`)
     }
 
     // Recency-aware sort: newer scored picks beat older near-ties.

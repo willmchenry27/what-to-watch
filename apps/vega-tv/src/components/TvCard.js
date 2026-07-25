@@ -2,12 +2,15 @@ import { useState } from 'react'
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native'
 import { colors, sizes, spacing } from '../theme/colors'
 import { tmdbImage } from '../api/client'
-import { ScoreBadgeRow } from './ScoreBadge'
+import { asNumber, tone } from './ScoreBadge'
 
 export function TvCard({ pick, onPress, hasTVPreferredFocus }) {
   const [focused, setFocused] = useState(false)
   const poster = tmdbImage(pick.poster_path, 'w500')
-  const seasonLabel = pick.season > 1 ? `S${pick.season}` : null
+  const scoreValue = asNumber(pick.combined_score)
+  const score = scoreValue != null ? Math.round(scoreValue) : null
+  const scoreColor = score != null ? tone(score, 100) : null
+  const showSeasonPill = pick.season > 1
 
   return (
     <Pressable
@@ -33,17 +36,19 @@ export function TvCard({ pick, onPress, hasTVPreferredFocus }) {
             <Text style={styles.platformPillText}>{pick.platform}</Text>
           </View>
         ) : null}
+        {score != null ? (
+          <View style={[styles.scorePill, { borderColor: scoreColor }]}>
+            <Text style={[styles.scorePillText, { color: scoreColor }]}>{score}</Text>
+          </View>
+        ) : null}
+        {showSeasonPill ? (
+          <View style={styles.seasonPill}>
+            <Text style={styles.seasonPillText}>S{pick.season}</Text>
+          </View>
+        ) : null}
       </View>
-      <View style={styles.meta}>
-        <Text numberOfLines={1} style={styles.title}>
-          {pick.title}
-          {seasonLabel ? <Text style={styles.season}> · {seasonLabel}</Text> : null}
-        </Text>
-        <ScoreBadgeRow
-          combined_score={pick.combined_score}
-          imdb_score={pick.imdb_score}
-          rt_score={pick.rt_score}
-        />
+      <View style={styles.titleStrip}>
+        <Text numberOfLines={2} style={styles.title}>{pick.title}</Text>
       </View>
     </Pressable>
   )
@@ -51,8 +56,9 @@ export function TvCard({ pick, onPress, hasTVPreferredFocus }) {
 
 const styles = StyleSheet.create({
   card: {
+    // Height comes from content: full-aspect poster + fixed title strip.
+    // The strip height is fixed so one- and two-line titles stay aligned.
     width: sizes.cardWidth,
-    height: sizes.cardHeight,
     borderRadius: 12,
     backgroundColor: colors.cardBg,
     borderWidth: 2,
@@ -104,17 +110,51 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     letterSpacing: 0.4,
   },
-  meta: {
-    padding: spacing.md,
-    gap: spacing.sm,
+  scorePill: {
+    position: 'absolute',
+    top: spacing.sm,
+    right: spacing.sm,
+    minWidth: 48,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+    borderWidth: 2,
+    backgroundColor: 'rgba(0,0,0,0.78)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scorePillText: {
+    fontSize: 22,
+    fontWeight: '800',
+    letterSpacing: -0.3,
+  },
+  seasonPill: {
+    position: 'absolute',
+    bottom: spacing.sm,
+    left: spacing.sm,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+  },
+  seasonPillText: {
+    color: colors.accent,
+    fontSize: 14,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+  },
+  titleStrip: {
+    height: 76,
+    paddingHorizontal: spacing.md,
+    justifyContent: 'center',
+    backgroundColor: colors.bgElevated,
   },
   title: {
     color: colors.text,
-    fontSize: 18,
+    fontSize: 20,
+    lineHeight: 26,
     fontWeight: '700',
-  },
-  season: {
-    color: colors.accent,
-    fontWeight: '600',
   },
 })

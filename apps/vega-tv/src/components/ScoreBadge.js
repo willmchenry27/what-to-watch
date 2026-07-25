@@ -6,7 +6,7 @@ import { colors } from '../theme/colors'
 //   imdb_score:     0–10  (IMDb rating)
 //   rt_score:       0–100 (Rotten Tomatoes, rendered with %)
 
-function tone(value, max) {
+export function tone(value, max) {
   if (value == null) return colors.textDim
   const t = max === 100 ? [80, 60] : [7.5, 6]
   if (value >= t[0]) return colors.scoreHigh
@@ -14,7 +14,7 @@ function tone(value, max) {
   return colors.scoreLow
 }
 
-function asNumber(value) {
+export function asNumber(value) {
   if (value === null || value === undefined) return null
   const n = Number(value)
   return Number.isFinite(n) ? n : null

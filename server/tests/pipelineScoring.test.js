@@ -5,6 +5,7 @@ const {
   bayesianScore,
   calculateScoreDetails,
   isTopRatedCandidate,
+  hasTooManySeasons,
 } = require('../services/generateGuide')
 const { mergeDiscoveryCandidates } = require('../services/fetchTmdb')
 
@@ -49,6 +50,15 @@ test('Top Rated excludes kids, animated, and family genres', () => {
     isTopRatedCandidate({ ...qualifying, genres: ['Drama', 'Thriller'] }),
     true,
   )
+})
+
+test('long-running shows (> 5 premiering seasons) are excluded', () => {
+  assert.equal(hasTooManySeasons({ season: 6 }), true)
+  assert.equal(hasTooManySeasons({ season: 12 }), true)
+  assert.equal(hasTooManySeasons({ season: 5 }), false) // boundary: S5 kept
+  assert.equal(hasTooManySeasons({ season: 2 }), false)
+  assert.equal(hasTooManySeasons({ season: null }), false) // movies / simmered
+  assert.equal(hasTooManySeasons({}), false) // no season field
 })
 
 test('discovery candidates dedupe by media type and TMDB ID', () => {

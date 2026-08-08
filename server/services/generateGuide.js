@@ -7,6 +7,7 @@ const { getDb } = require('../db/schema')
 const MIN_TMDB_VOTES = 5
 const MIN_TOP_RATED_SCORE = 70
 const EXCLUDED_TOP_RATED_GENRES = ['Animation', 'Family', 'Kids']
+const MAX_SEASONS = 5
 const SIMMER_WEEKS = 8
 const RETURNING_WEEKS = 12
 const RECENCY_WEIGHT_PER_WEEK = 1.5
@@ -176,6 +177,14 @@ function isFreshDropCandidate(p) {
 
 function hasExcludedTopRatedGenre(p) {
   return Array.isArray(p.genres) && p.genres.some((g) => EXCLUDED_TOP_RATED_GENRES.includes(g))
+}
+
+// Long-running shows (premiering their Nth season, N > MAX_SEASONS) are
+// excluded to favor prestige/limited content. `season` is only set on the
+// returning cohort; it's null for movies and season-1 shows, so this is a
+// no-op for them.
+function hasTooManySeasons(p) {
+  return p.season != null && p.season > MAX_SEASONS
 }
 
 function isTopRatedCandidate(p) {
@@ -472,7 +481,12 @@ async function generateGuide() {
       const key = `${p.tmdb_id}-${p.season}`
       if (!merged.has(key)) merged.set(key, p)
     }
-    const allReturning = [...merged.values()].filter((p) => !freshTmdbIds.has(p.tmdb_id))
+    const mergedReturning = [...merged.values()].filter((p) => !freshTmdbIds.has(p.tmdb_id))
+    const allReturning = mergedReturning.filter((p) => !hasTooManySeasons(p))
+    const longRunningDropped = mergedReturning.length - allReturning.length
+    if (longRunningDropped > 0) {
+      console.log(`  Season-limit filter: removed ${longRunningDropped} long-running picks (> ${MAX_SEASONS} seasons)`)
+    }
 
     // (d) Refresh providers for the merged set (covers both new and past)
     if (allReturning.length > 0) {
@@ -716,6 +730,7 @@ module.exports = {
   calculateScoreDetails,
   scoreReturningPick,
   isTopRatedCandidate,
+  hasTooManySeasons,
 }
 
 // Run standalone

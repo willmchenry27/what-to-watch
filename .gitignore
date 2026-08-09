@@ -22,6 +22,11 @@ dist-ssr
 CLAUDE*.md
 screenshot.mjs
 
+# Local agent and accidental root package-manager files
+/.claude/
+/pnpm-lock.yaml
+/pnpm-workspace.yaml
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

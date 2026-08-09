@@ -11,14 +11,17 @@ import { colors, spacing } from '../theme/colors'
 
 export function TvHomeScreen() {
   const { status, guide, error } = useGuide()
-  const { isAction } = useUserActions()
+  const { savedPicks, isAction } = useUserActions()
   const [activePick, setActivePick] = useState(null)
   const closeDetails = useCallback(() => setActivePick(null), [])
 
   const visiblePicks = useMemo(() => {
     const picks = guide?.picks ?? []
     return picks.filter(
-      (pick) => !isAction(pick.tmdb_id, 'seen') && !isAction(pick.tmdb_id, 'dismiss'),
+      (pick) =>
+        !isAction(pick.tmdb_id, 'save') &&
+        !isAction(pick.tmdb_id, 'seen') &&
+        !isAction(pick.tmdb_id, 'dismiss'),
     )
   }, [guide?.picks, isAction])
 
@@ -26,6 +29,15 @@ export function TvHomeScreen() {
     () => groupPicks(visiblePicks, guide?.week_of),
     [visiblePicks, guide?.week_of],
   )
+
+  const visibleSavedPicks = useMemo(
+    () =>
+      savedPicks.filter(
+        (pick) => !isAction(pick.tmdb_id, 'seen') && !isAction(pick.tmdb_id, 'dismiss'),
+      ),
+    [savedPicks, isAction],
+  )
+  const hasSavedPicks = visibleSavedPicks.length > 0
 
   if (status === 'loading') return <TvLoading />
   if (status === 'error') return <TvError message={error} />
@@ -47,11 +59,18 @@ export function TvHomeScreen() {
           {weekLabel ? <Text style={styles.weekLabel}>Week of {weekLabel}</Text> : null}
         </View>
         <TvRow
+          title="Saved"
+          subtitle="Your pull list"
+          picks={visibleSavedPicks}
+          onSelect={setActivePick}
+          preferFirstFocus
+        />
+        <TvRow
           title="Top Rated"
           subtitle="Scored by IMDb + TMDB community"
           picks={topRated}
           onSelect={setActivePick}
-          preferFirstFocus
+          preferFirstFocus={!hasSavedPicks}
         />
         <TvRow
           title="Fresh Drops"

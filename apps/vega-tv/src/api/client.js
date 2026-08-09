@@ -43,6 +43,11 @@ export async function fetchUserActions({ signal } = {}) {
   return res.json()
 }
 
+export async function fetchSavedPicks({ signal } = {}) {
+  const res = await apiFetch('/api/actions/saved', { auth: true, signal })
+  return res.json()
+}
+
 export async function toggleUserAction(tmdbId, actionType) {
   const res = await apiFetch('/api/actions', {
     method: 'POST',

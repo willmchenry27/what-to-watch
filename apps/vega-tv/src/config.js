@@ -1,3 +1,5 @@
+/* global process, require */
+
 // API config for Vega build.
 // Order of precedence:
 //   1. src/config.local.js (gitignored — your dev machine LAN IP)
@@ -8,7 +10,7 @@
 let local = {}
 try {
   local = require('./config.local').default || {}
-} catch (e) {
+} catch {
   // No local override file — fine, fall through.
 }
 
@@ -26,3 +28,7 @@ export const API_BASE_URL = (local.API_BASE_URL || FROM_ENV || 'http://localhost
   /\/$/,
   '',
 )
+
+// Recipient token: the web app harvests this from email links (?r=...); on TV
+// there's no way to receive that link, so it's pasted once into config.local.js.
+export const RECIPIENT_TOKEN = local.RECIPIENT_TOKEN || null

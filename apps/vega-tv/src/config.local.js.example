@@ -3,4 +3,8 @@
 // Ensure the Express server is reachable on that IP+port from another device on the LAN.
 export default {
   API_BASE_URL: 'http://192.168.1.42:3001',
+  // Paste a recipient token here to enable Save / Seen it / Not for me.
+  // Get one from the "?r=" value in a weekly-email action link, or generate
+  // a test token via server/lib/recipientToken.js (signRecipientToken).
+  RECIPIENT_TOKEN: null,
 }

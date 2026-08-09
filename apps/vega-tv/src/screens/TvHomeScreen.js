@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { ScrollView, StyleSheet, Text, View } from 'react-native'
 import { useGuide } from '../hooks/useGuide'
 import { groupPicks } from '../lib/grouping'
@@ -6,16 +6,25 @@ import { TvRow } from '../components/TvRow'
 import { TvLoading } from '../components/TvLoading'
 import { TvError } from '../components/TvError'
 import { TvDetailModal } from '../components/TvDetailModal'
+import { useUserActions } from '../hooks/useUserActions'
 import { colors, spacing } from '../theme/colors'
 
 export function TvHomeScreen() {
   const { status, guide, error } = useGuide()
+  const { isAction } = useUserActions()
   const [activePick, setActivePick] = useState(null)
+  const closeDetails = useCallback(() => setActivePick(null), [])
 
-  const picks = guide?.picks ?? []
+  const visiblePicks = useMemo(() => {
+    const picks = guide?.picks ?? []
+    return picks.filter(
+      (pick) => !isAction(pick.tmdb_id, 'seen') && !isAction(pick.tmdb_id, 'dismiss'),
+    )
+  }, [guide?.picks, isAction])
+
   const { topRated, freshDrops } = useMemo(
-    () => groupPicks(picks, guide?.week_of),
-    [picks, guide?.week_of],
+    () => groupPicks(visiblePicks, guide?.week_of),
+    [visiblePicks, guide?.week_of],
   )
 
   if (status === 'loading') return <TvLoading />
@@ -55,7 +64,7 @@ export function TvHomeScreen() {
       <TvDetailModal
         pick={activePick}
         visible={Boolean(activePick)}
-        onClose={() => setActivePick(null)}
+        onClose={closeDetails}
       />
     </View>
   )
